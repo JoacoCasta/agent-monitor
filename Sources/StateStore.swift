@@ -17,10 +17,10 @@ final class StateStore: ObservableObject {
 
     var preferredPopoverHeight: CGFloat {
         if !hasCompletedOnboarding {
-            return 470
+            return 480
         }
         if showingSettings {
-            return 510
+            return 522
         }
         var bodyHeight: CGFloat = 20
         for provider in enabledProviders {
@@ -35,8 +35,8 @@ final class StateStore: ObservableObject {
         if enabledProviders.count > 1 {
             bodyHeight += CGFloat(enabledProviders.count - 1) * 10
         }
-        let total = 44 + 40 + bodyHeight
-        return min(580, max(280, total))
+        let total = 46 + 44 + bodyHeight
+        return min(588, max(288, total))
     }
 
     @Published private(set) var sessionsByProvider: [AgentProvider: [SessionState]] = [:]

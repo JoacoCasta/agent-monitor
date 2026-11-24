@@ -63,10 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func syncPopoverSize() {
         let targetSize = NSSize(width: 380, height: store.preferredPopoverHeight)
+        if hostingController.preferredContentSize != targetSize {
+            hostingController.preferredContentSize = targetSize
+        }
         if popover.contentSize != targetSize {
             popover.contentSize = targetSize
         }
-        hostingController.view.frame = NSRect(origin: .zero, size: targetSize)
     }
 
     private func bindStoreToStatusBar() {
@@ -94,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let t = store.l10n
         let result = NSMutableAttributedString()
-        let tagFont = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+        let tagFont = NSFont.systemFont(ofSize: 11.0, weight: .bold)
         let pctFont = NSFont.monospacedDigitSystemFont(ofSize: 12.0, weight: .medium)
         let dotDiameter: CGFloat = 8.0
         let dotYOffset = floor((pctFont.capHeight - dotDiameter) / 2.0)
@@ -119,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     string: "\(provider.shortTag) ",
                     attributes: [
                         .font: tagFont,
-                        .foregroundColor: NSColor.secondaryLabelColor,
+                        .foregroundColor: NSColor.labelColor,
                     ]
                 )
             )
@@ -276,6 +278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func menuQuit() {
         NSApp.terminate(nil)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !popover.isShown {
+            openPopover()
+        }
+        return true
     }
 
     func focusProvider(_ provider: AgentProvider) {

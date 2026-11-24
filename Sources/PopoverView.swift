@@ -7,6 +7,17 @@ struct PopoverView: View {
 
     private var t: L10n { store.l10n }
 
+    private var readableGreen: Color {
+        Color(
+            nsColor: NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                return isDark
+                    ? NSColor.systemGreen
+                    : NSColor(srgbRed: 0.08, green: 0.50, blue: 0.20, alpha: 1.0)
+            }
+        )
+    }
+
     var body: some View {
         Group {
             if !store.hasCompletedOnboarding {
@@ -17,7 +28,9 @@ struct PopoverView: View {
                 dashboardView
             }
         }
-        .frame(width: 380, height: store.preferredPopoverHeight, alignment: .top)
+        .frame(width: 380)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.86))
     }
 
     // MARK: - Onboarding View
@@ -49,8 +62,9 @@ struct PopoverView: View {
                 .fixedSize()
                 .help(t.languageLabel)
             }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
+            .padding(.horizontal, 18)
+            .padding(.top, 2)
+            .frame(height: 46)
 
             Divider()
 
@@ -86,7 +100,7 @@ struct PopoverView: View {
                                                     .padding(.horizontal, 5)
                                                     .padding(.vertical, 1.5)
                                                     .background(Capsule().fill(Color.green.opacity(0.16)))
-                                                    .foregroundStyle(.green)
+                                                    .foregroundStyle(readableGreen)
                                             }
                                         }
 
@@ -131,7 +145,7 @@ struct PopoverView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 18)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -156,7 +170,8 @@ struct PopoverView: View {
                 .controlSize(.regular)
                 .disabled(store.onboardingSelection.isEmpty)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 2)
             .frame(height: 44)
         }
     }
@@ -195,8 +210,9 @@ struct PopoverView: View {
                     .controlSize(.small)
                 }
             }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
+            .padding(.horizontal, 18)
+            .padding(.top, 2)
+            .frame(height: 46)
 
             Divider()
 
@@ -281,11 +297,11 @@ struct PopoverView: View {
                                     HStack(spacing: 6) {
                                         if let info = hookInfo {
                                             Circle()
-                                                .fill(info.hooksInstalled ? Color.green : Color.secondary.opacity(0.45))
+                                                .fill(info.hooksInstalled ? readableGreen : Color.secondary.opacity(0.45))
                                                 .frame(width: 6, height: 6)
                                             Text(info.hooksInstalled ? t.hooksActive : t.hooksDisabled)
                                                 .font(.system(size: 10.5))
-                                                .foregroundStyle(info.hooksInstalled ? .green : .secondary)
+                                                .foregroundStyle(info.hooksInstalled ? readableGreen : .secondary)
 
                                             if !info.binaryFound && !info.appInstalled {
                                                 Text(t.notDetected)
@@ -329,7 +345,7 @@ struct PopoverView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 18)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -355,8 +371,9 @@ struct PopoverView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 14)
-            .frame(height: 40)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 2)
+            .frame(height: 44)
         }
     }
 
@@ -395,8 +412,9 @@ struct PopoverView: View {
                 .buttonStyle(.borderless)
                 .help(t.settingsHelp)
             }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
+            .padding(.horizontal, 18)
+            .padding(.top, 2)
+            .frame(height: 46)
 
             Divider()
 
@@ -419,7 +437,7 @@ struct PopoverView: View {
                         )
                     }
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 18)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -460,8 +478,9 @@ struct PopoverView: View {
                 .foregroundStyle(.secondary)
                 .padding(.leading, 8)
             }
-            .padding(.horizontal, 14)
-            .frame(height: 40)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 2)
+            .frame(height: 44)
         }
     }
 }
