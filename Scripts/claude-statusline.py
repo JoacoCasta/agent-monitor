@@ -12,6 +12,19 @@ CLAUDE_QUOTA_PATH = os.path.join(MONITOR_DIR, "claude-quota.json")
 PREV_STATUSLINE_PATH = os.path.join(MONITOR_DIR, "claude-prev-statusline.json")
 
 
+def atomic_replace(src, dst):
+    last_err = None
+    for _ in range(3):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError as exc:
+            last_err = exc
+            time.sleep(0.03)
+    if last_err is not None:
+        raise last_err
+
+
 def to_iso_utc(epoch_sec):
     try:
         ts = float(epoch_sec)
@@ -83,7 +96,7 @@ def write_claude_quota(payload):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tf:
             json.dump(snapshot, tf, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, CLAUDE_QUOTA_PATH)
+        atomic_replace(tmp_path, CLAUDE_QUOTA_PATH)
     except Exception:
         try:
             if os.path.exists(tmp_path):
@@ -106,12 +119,19 @@ def run_previous_statusline(raw_stdin):
             return False
         if "claude-statusline.py" in cmd:
             return False
+        if os.name == "nt":
+            shell_cmd = ["cmd", "/c", cmd]
+            extra_kwargs = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+        else:
+            shell_cmd = ["/bin/sh", "-c", cmd]
+            extra_kwargs = {}
         proc = subprocess.run(
-            ["/bin/sh", "-c", cmd],
+            shell_cmd,
             input=raw_stdin,
             capture_output=True,
             text=True,
             timeout=4,
+            **extra_kwargs
         )
         if proc.returncode == 0 and proc.stdout:
             sys.stdout.write(proc.stdout)

@@ -1,16 +1,81 @@
 #!/usr/bin/python3
-import fcntl
 import json
 import os
 import sys
 import tempfile
 import time
 
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+
 MONITOR_DIR = os.path.expanduser("~/.gemini/agent-monitor")
 STATE_PATH = os.path.join(MONITOR_DIR, "state.json")
 LOCK_PATH = os.path.join(MONITOR_DIR, "state.lock")
 IDLE_PRUNE_SECONDS = 3600.0
 VALID_PROVIDERS = ("antigravity", "codex", "claude")
+
+
+def acquire_lock(lock_file):
+    if os.name == "nt":
+        try:
+            lock_file.seek(0)
+            if os.path.getsize(LOCK_PATH) == 0:
+                lock_file.write(" ")
+                lock_file.flush()
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        except Exception:
+            pass
+    else:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+
+def release_lock(lock_file):
+    if os.name == "nt":
+        try:
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        except Exception:
+            pass
+    else:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def atomic_replace(src, dst):
+    last_err = None
+    for _ in range(3):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError as exc:
+            last_err = exc
+            time.sleep(0.03)
+    if last_err is not None:
+        raise last_err
+
+
+def is_root_path(path_str):
+    s = path_str.strip()
+    if s in ("/", "\\", ".", ""):
+        return True
+    if len(s) >= 2 and s[0].isalpha() and s[1] == ":":
+        rest = s[2:].strip("/\\")
+        if rest == "":
+            return True
+    return False
+
+
+def basename_if_non_root(raw_path):
+    if not isinstance(raw_path, str):
+        return ""
+    cleaned = raw_path.strip().rstrip("/\\")
+    if not cleaned or is_root_path(cleaned):
+        return ""
+    norm = cleaned.replace("\\", "/")
+    base = norm.rsplit("/", 1)[-1]
+    return base
 
 
 def parse_tool_args(raw_args):
@@ -43,23 +108,19 @@ def extract_model_name(payload, existing):
 def extract_workspace(payload, existing):
     ws_paths = payload.get("workspacePaths")
     if isinstance(ws_paths, list) and ws_paths:
-        first = str(ws_paths[0]).rstrip("/")
-        if first:
-            base = os.path.basename(first)
-            if base:
-                return base
+        base = basename_if_non_root(str(ws_paths[0]))
+        if base:
+            return base
     ws = payload.get("workspace")
     if isinstance(ws, dict):
         cdir = ws.get("current_dir") or ws.get("project_dir")
-        if isinstance(cdir, str) and cdir and cdir != "/":
-            base = os.path.basename(cdir.rstrip("/"))
-            if base:
-                return base
-    cwd = payload.get("cwd")
-    if isinstance(cwd, str) and cwd and cwd != "/":
-        base = os.path.basename(cwd.rstrip("/"))
+        base = basename_if_non_root(cdir)
         if base:
             return base
+    cwd = payload.get("cwd")
+    base = basename_if_non_root(cwd)
+    if base:
+        return base
     prev = str(existing.get("workspace") or "")
     if prev in ("Sin workspace", "No workspace"):
         return ""
@@ -100,8 +161,8 @@ def update_state(provider, payload, event):
     os.makedirs(MONITOR_DIR, exist_ok=True)
     now = time.time()
 
-    with open(LOCK_PATH, "a+") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    with open(LOCK_PATH, "a+", encoding="utf-8") as lock_file:
+        acquire_lock(lock_file)
         try:
             state = {}
             if os.path.exists(STATE_PATH):
@@ -334,7 +395,7 @@ def update_state(provider, payload, event):
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as tf:
                     json.dump(state, tf, ensure_ascii=False, indent=2)
-                os.replace(tmp_path, STATE_PATH)
+                atomic_replace(tmp_path, STATE_PATH)
             except Exception:
                 try:
                     if os.path.exists(tmp_path):
@@ -342,7 +403,7 @@ def update_state(provider, payload, event):
                 except Exception:
                     pass
         finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            release_lock(lock_file)
 
 
 def emit_contract_response(provider, event):

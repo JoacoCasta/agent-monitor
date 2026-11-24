@@ -3,13 +3,17 @@ import argparse
 import datetime
 import json
 import os
-import pty
-import select
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+
+if os.name != "nt":
+    import pty
+    import select
 
 
 def utc_now_iso():
@@ -28,15 +32,48 @@ def epoch_to_iso(epoch_sec):
         return ""
 
 
+def quote_cmd_arg(path):
+    if " " in path or "\t" in path:
+        return '"{}"'.format(path)
+    return path
+
+
+def resolve_python_executable():
+    env_py = os.environ.get("AGENT_MONITOR_PYTHON")
+    if env_py and os.path.isfile(env_py):
+        return env_py
+    if not getattr(sys, "frozen", False) and sys.executable and os.path.isfile(sys.executable):
+        return sys.executable
+    if os.name != "nt" and os.path.isfile("/usr/bin/python3"):
+        return "/usr/bin/python3"
+    for cand in ("python3", "python"):
+        found = shutil.which(cand)
+        if found:
+            return found
+    return sys.executable or "python3"
+
+
 def resolve_agy_binary():
     candidates = [
         os.path.expanduser("~/.gemini/bin/agy"),
+        os.path.expanduser("~/.gemini/bin/agy.exe"),
         shutil.which("agy"),
+        shutil.which("agy.exe"),
+        shutil.which("agy.cmd"),
         "/usr/local/bin/agy",
         "/opt/homebrew/bin/agy",
     ]
+    if os.name == "nt":
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        if local_app:
+            candidates.extend(
+                [
+                    os.path.join(local_app, "Antigravity", "agy.exe"),
+                    os.path.join(local_app, "Programs", "Antigravity", "agy.exe"),
+                ]
+            )
     for path in candidates:
-        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+        if path and os.path.isfile(path) and (os.name == "nt" or os.access(path, os.X_OK)):
             return path
     return None
 
@@ -44,162 +81,60 @@ def resolve_agy_binary():
 def resolve_codex_binary():
     candidates = [
         shutil.which("codex"),
+        shutil.which("codex.exe"),
+        shutil.which("codex.cmd"),
         "/opt/homebrew/bin/codex",
         "/usr/local/bin/codex",
         os.path.expanduser("~/.local/bin/codex"),
         "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
     ]
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA", "")
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        if appdata:
+            candidates.append(os.path.join(appdata, "npm", "codex.cmd"))
+        if local_app:
+            candidates.extend(
+                [
+                    os.path.join(local_app, "Programs", "ChatGPT", "resources", "codex-cli", "codex.exe"),
+                    os.path.join(local_app, "Programs", "Codex", "codex.exe"),
+                ]
+            )
     for path in candidates:
-        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+        if path and os.path.isfile(path) and (os.name == "nt" or os.access(path, os.X_OK)):
             return path
     return None
 
 
-def fetch_antigravity():
-    agy_bin = resolve_agy_binary()
-    if not agy_bin:
-        raise RuntimeError("Binary 'agy' not found")
+def no_window_kwargs():
+    if os.name == "nt":
+        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+    return {}
 
-    with tempfile.TemporaryDirectory(prefix="agy-quota-") as td:
-        out_file = os.path.join(td, "status.json")
-        cap_script = os.path.join(td, "cap.sh")
-        with open(cap_script, "w", encoding="utf-8") as f:
-            f.write(
-                "#!/bin/sh\n"
-                "cat > \"{0}.tmp\" && mv \"{0}.tmp\" \"{0}\"\n"
-                "echo ok\n".format(out_file)
-            )
-        os.chmod(cap_script, 0o755)
 
-        settings_json = json.dumps(
-            {
-                "statusLine": {
-                    "type": "command",
-                    "command": cap_script,
-                    "enabled": True,
-                }
-            }
-        )
+def parse_antigravity_payload(got_payload):
+    raw_quota = got_payload.get("quota") or {}
+    plan_tier = str(got_payload.get("plan_tier") or "")
 
-        env = os.environ.copy()
-        env.setdefault("HOME", os.path.expanduser("~"))
-        env.setdefault("TERM", "xterm-256color")
+    specs = [
+        ("gemini-5h", "gemini", "Gemini", "5h", 5, "5-hour window", False),
+        ("gemini-weekly", "gemini", "Gemini", "weekly", 7, "Weekly limit", True),
+        ("3p-5h", "third_party", "3P Models (Claude / GPT)", "5h", 5, "5-hour window", False),
+        ("3p-weekly", "third_party", "3P Models (Claude / GPT)", "weekly", 7, "Weekly limit", True),
+    ]
 
-        master, slave = pty.openpty()
-        proc = None
-        got_payload = None
-        try:
-            proc = subprocess.Popen(
-                [agy_bin, "--settings", settings_json],
-                stdin=slave,
-                stdout=slave,
-                stderr=slave,
-                cwd=td,
-                env=env,
-                close_fds=True,
-                start_new_session=True,
-            )
-        except Exception:
-            os.close(slave)
-            os.close(master)
-            raise
-
-        os.close(slave)
-        deadline = time.time() + 15.0
-        try:
-            while time.time() < deadline:
-                r, _, _ = select.select([master], [], [], 0.15)
-                if r:
-                    try:
-                        os.read(master, 4096)
-                    except OSError:
-                        break
-                if os.path.exists(out_file):
-                    try:
-                        with open(out_file, "r", encoding="utf-8") as sf:
-                            data = json.load(sf)
-                        if (
-                            isinstance(data, dict)
-                            and isinstance(data.get("quota"), dict)
-                            and data["quota"]
-                        ):
-                            got_payload = data
-                            break
-                    except Exception:
-                        pass
-                if proc.poll() is not None:
-                    break
-        finally:
-            if proc is not None and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=2.0)
-                except Exception:
-                    proc.kill()
-                    try:
-                        proc.wait(timeout=1.0)
-                    except Exception:
-                        pass
-            try:
-                os.close(master)
-            except OSError:
-                pass
-
-        if not got_payload:
-            raise RuntimeError("Timeout fetching quota from agy")
-
-        raw_quota = got_payload.get("quota") or {}
-        plan_tier = str(got_payload.get("plan_tier") or "")
-
-        specs = [
-            ("gemini-5h", "gemini", "Gemini", "5h", 5, "5-hour window", False),
-            ("gemini-weekly", "gemini", "Gemini", "weekly", 7, "Weekly limit", True),
-            ("3p-5h", "third_party", "3P Models (Claude / GPT)", "5h", 5, "5-hour window", False),
-            ("3p-weekly", "third_party", "3P Models (Claude / GPT)", "weekly", 7, "Weekly limit", True),
-        ]
-
-        buckets = []
-        seen = set()
-        for bucket_id, group_key, group, window_kind, window_amount, label, is_weekly in specs:
-            if bucket_id in raw_quota and isinstance(raw_quota[bucket_id], dict):
-                seen.add(bucket_id)
-                item = raw_quota[bucket_id]
-                frac = item.get("remaining_fraction")
-                if not isinstance(frac, (int, float)):
-                    amount = item.get("remaining_amount")
-                    frac = float(amount) if isinstance(amount, (int, float)) else 0.0
-                entry = {
-                    "id": bucket_id,
-                    "group": group,
-                    "groupKey": group_key,
-                    "label": label,
-                    "windowKind": window_kind,
-                    "windowAmount": window_amount,
-                    "isWeekly": is_weekly,
-                    "remainingFraction": max(0.0, min(1.0, float(frac))),
-                    "resetTime": str(item.get("reset_time") or ""),
-                    "resetInSeconds": int(item.get("reset_in_seconds") or 0),
-                }
-                if "disabled" in item:
-                    entry["disabled"] = bool(item["disabled"])
-                buckets.append(entry)
-
-        for bucket_id, item in raw_quota.items():
-            if bucket_id in seen or not isinstance(item, dict):
-                continue
+    buckets = []
+    seen = set()
+    for bucket_id, group_key, group, window_kind, window_amount, label, is_weekly in specs:
+        if bucket_id in raw_quota and isinstance(raw_quota[bucket_id], dict):
+            seen.add(bucket_id)
+            item = raw_quota[bucket_id]
             frac = item.get("remaining_fraction")
             if not isinstance(frac, (int, float)):
                 amount = item.get("remaining_amount")
                 frac = float(amount) if isinstance(amount, (int, float)) else 0.0
-            is_weekly = "weekly" in bucket_id.lower()
-            is_3p = "3p" in bucket_id.lower()
-            group_key = "third_party" if is_3p else "gemini"
-            group = "3P Models (Claude / GPT)" if is_3p else "Gemini"
-            window_kind = "weekly" if is_weekly else "5h"
-            window_amount = 7 if is_weekly else 5
-            label = "Weekly limit" if is_weekly else "5-hour window"
             entry = {
-                "id": str(bucket_id),
+                "id": bucket_id,
                 "group": group,
                 "groupKey": group_key,
                 "label": label,
@@ -214,12 +149,192 @@ def fetch_antigravity():
                 entry["disabled"] = bool(item["disabled"])
             buckets.append(entry)
 
-        return {
-            "provider": "antigravity",
-            "fetchedAt": utc_now_iso(),
-            "planType": plan_tier,
-            "buckets": buckets,
+    for bucket_id, item in raw_quota.items():
+        if bucket_id in seen or not isinstance(item, dict):
+            continue
+        frac = item.get("remaining_fraction")
+        if not isinstance(frac, (int, float)):
+            amount = item.get("remaining_amount")
+            frac = float(amount) if isinstance(amount, (int, float)) else 0.0
+        is_weekly = "weekly" in bucket_id.lower()
+        is_3p = "3p" in bucket_id.lower()
+        group_key = "third_party" if is_3p else "gemini"
+        group = "3P Models (Claude / GPT)" if is_3p else "Gemini"
+        window_kind = "weekly" if is_weekly else "5h"
+        window_amount = 7 if is_weekly else 5
+        label = "Weekly limit" if is_weekly else "5-hour window"
+        entry = {
+            "id": str(bucket_id),
+            "group": group,
+            "groupKey": group_key,
+            "label": label,
+            "windowKind": window_kind,
+            "windowAmount": window_amount,
+            "isWeekly": is_weekly,
+            "remainingFraction": max(0.0, min(1.0, float(frac))),
+            "resetTime": str(item.get("reset_time") or ""),
+            "resetInSeconds": int(item.get("reset_in_seconds") or 0),
         }
+        if "disabled" in item:
+            entry["disabled"] = bool(item["disabled"])
+        buckets.append(entry)
+
+    return {
+        "provider": "antigravity",
+        "fetchedAt": utc_now_iso(),
+        "planType": plan_tier,
+        "buckets": buckets,
+    }
+
+
+def fetch_antigravity():
+    agy_bin = resolve_agy_binary()
+    if not agy_bin:
+        raise RuntimeError("Binary 'agy' not found")
+
+    py_exe = resolve_python_executable()
+    with tempfile.TemporaryDirectory(prefix="agy-quota-") as td:
+        out_file = os.path.join(td, "status.json")
+        cap_script = os.path.join(td, "cap.py")
+        with open(cap_script, "w", encoding="utf-8") as f:
+            f.write(
+                "import os, sys\n"
+                "data = sys.stdin.read()\n"
+                "out = sys.argv[1]\n"
+                "tmp = out + '.tmp'\n"
+                "with open(tmp, 'w', encoding='utf-8') as wf:\n"
+                "    wf.write(data)\n"
+                "os.replace(tmp, out)\n"
+                "print('ok')\n"
+            )
+
+        cmd_str = "{} {} {}".format(
+            quote_cmd_arg(py_exe), quote_cmd_arg(cap_script), quote_cmd_arg(out_file)
+        )
+        settings_json = json.dumps(
+            {
+                "statusLine": {
+                    "type": "command",
+                    "command": cmd_str,
+                    "enabled": True,
+                }
+            }
+        )
+
+        env = os.environ.copy()
+        env.setdefault("HOME", os.path.expanduser("~"))
+        env.setdefault("TERM", "xterm-256color")
+
+        got_payload = None
+        if os.name == "nt":
+            proc = subprocess.Popen(
+                [agy_bin, "--settings", settings_json],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                cwd=td,
+                env=env,
+                **no_window_kwargs()
+            )
+            drain_thread = threading.Thread(
+                target=lambda: proc.stdout.read() if proc.stdout else None,
+                daemon=True,
+            )
+            drain_thread.start()
+            deadline = time.time() + 15.0
+            try:
+                while time.time() < deadline:
+                    if os.path.exists(out_file):
+                        try:
+                            with open(out_file, "r", encoding="utf-8") as sf:
+                                data = json.load(sf)
+                            if (
+                                isinstance(data, dict)
+                                and isinstance(data.get("quota"), dict)
+                                and data["quota"]
+                            ):
+                                got_payload = data
+                                break
+                        except Exception:
+                            pass
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.15)
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2.0)
+                    except Exception:
+                        proc.kill()
+                        try:
+                            proc.wait(timeout=1.0)
+                        except Exception:
+                            pass
+        else:
+            master, slave = pty.openpty()
+            proc = None
+            try:
+                proc = subprocess.Popen(
+                    [agy_bin, "--settings", settings_json],
+                    stdin=slave,
+                    stdout=slave,
+                    stderr=slave,
+                    cwd=td,
+                    env=env,
+                    close_fds=True,
+                    start_new_session=True,
+                )
+            except Exception:
+                os.close(slave)
+                os.close(master)
+                raise
+
+            os.close(slave)
+            deadline = time.time() + 15.0
+            try:
+                while time.time() < deadline:
+                    r, _, _ = select.select([master], [], [], 0.15)
+                    if r:
+                        try:
+                            os.read(master, 4096)
+                        except OSError:
+                            break
+                    if os.path.exists(out_file):
+                        try:
+                            with open(out_file, "r", encoding="utf-8") as sf:
+                                data = json.load(sf)
+                            if (
+                                isinstance(data, dict)
+                                and isinstance(data.get("quota"), dict)
+                                and data["quota"]
+                            ):
+                                got_payload = data
+                                break
+                        except Exception:
+                            pass
+                    if proc.poll() is not None:
+                        break
+            finally:
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2.0)
+                    except Exception:
+                        proc.kill()
+                        try:
+                            proc.wait(timeout=1.0)
+                        except Exception:
+                            pass
+                try:
+                    os.close(master)
+                except OSError:
+                    pass
+
+        if not got_payload:
+            raise RuntimeError("Timeout fetching quota from agy")
+
+        return parse_antigravity_payload(got_payload)
 
 
 def describe_codex_window(mins):
@@ -247,15 +362,34 @@ def fetch_codex():
     env = os.environ.copy()
     env.setdefault("HOME", os.path.expanduser("~"))
 
-    proc = subprocess.Popen(
-        [codex_bin, "app-server"],
+    popen_kwargs = dict(
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=env,
-        start_new_session=True,
     )
+    if os.name == "nt":
+        popen_kwargs.update(no_window_kwargs())
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen([codex_bin, "app-server"], **popen_kwargs)
+
+    lines_queue = queue.Queue()
+
+    def reader_worker():
+        try:
+            for line in iter(proc.stdout.readline, ""):
+                lines_queue.put(line)
+        except Exception:
+            pass
+        finally:
+            lines_queue.put(None)
+
+    threading.Thread(target=reader_worker, daemon=True).start()
 
     deadline = time.time() + 10.0
     rate_result = None
@@ -273,21 +407,23 @@ def fetch_codex():
 
         init_ok = False
         while time.time() < deadline:
-            r, _, _ = select.select([proc.stdout], [], [], 0.2)
-            if r:
-                line = proc.stdout.readline()
-                if not line:
+            remaining = max(0.05, min(0.25, deadline - time.time()))
+            try:
+                line = lines_queue.get(timeout=remaining)
+            except queue.Empty:
+                if proc.poll() is not None:
                     break
-                try:
-                    msg = json.loads(line)
-                except Exception:
-                    continue
-                if msg.get("id") == 1:
-                    if "error" in msg:
-                        raise RuntimeError(str(msg["error"]))
-                    init_ok = True
-                    break
-            if proc.poll() is not None:
+                continue
+            if line is None:
+                break
+            try:
+                msg = json.loads(line)
+            except Exception:
+                continue
+            if msg.get("id") == 1:
+                if "error" in msg:
+                    raise RuntimeError(str(msg["error"]))
+                init_ok = True
                 break
 
         if not init_ok:
@@ -310,21 +446,23 @@ def fetch_codex():
         proc.stdin.flush()
 
         while time.time() < deadline:
-            r, _, _ = select.select([proc.stdout], [], [], 0.2)
-            if r:
-                line = proc.stdout.readline()
-                if not line:
+            remaining = max(0.05, min(0.25, deadline - time.time()))
+            try:
+                line = lines_queue.get(timeout=remaining)
+            except queue.Empty:
+                if proc.poll() is not None:
                     break
-                try:
-                    msg = json.loads(line)
-                except Exception:
-                    continue
-                if msg.get("id") == 2:
-                    if "error" in msg:
-                        raise RuntimeError(str(msg["error"]))
-                    rate_result = msg.get("result")
-                    break
-            if proc.poll() is not None:
+                continue
+            if line is None:
+                break
+            try:
+                msg = json.loads(line)
+            except Exception:
+                continue
+            if msg.get("id") == 2:
+                if "error" in msg:
+                    raise RuntimeError(str(msg["error"]))
+                rate_result = msg.get("result")
                 break
     finally:
         if proc.poll() is None:

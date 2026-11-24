@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r desktop/requirements.txt pyinstaller
+      - name: Build AgentMonitor.exe
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --windowed --onefile --name AgentMonitor --add-data "Scripts;Scripts" desktop/agent_monitor.py
+          New-Item -ItemType Directory -Force -Path dist/release-win/Scripts | Out-Null
+          Copy-Item dist/AgentMonitor.exe dist/release-win/AgentMonitor.exe
+          Copy-Item Scripts/*.py dist/release-win/Scripts/
+          Copy-Item windows/install.ps1 dist/release-win/install.ps1
+          Copy-Item windows/uninstall.ps1 dist/release-win/uninstall.ps1
+          Compress-Archive -Path dist/release-win/* -DestinationPath AgentMonitor-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMonitor-Windows-x64.zip
+          path: AgentMonitor-Windows-x64.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r desktop/requirements.txt pyinstaller
+      - name: Build agent-monitor binary
+        run: |
+          pyinstaller --noconfirm --clean --onefile --name agent-monitor --add-data "Scripts:Scripts" desktop/agent_monitor.py
+          mkdir -p dist/release-linux/Scripts
+          cp dist/agent-monitor dist/release-linux/agent-monitor
+          cp Scripts/*.py dist/release-linux/Scripts/
+          cp linux/install.sh dist/release-linux/install.sh
+          cp linux/uninstall.sh dist/release-linux/uninstall.sh
+          tar -czf AgentMonitor-Linux-x64.tar.gz -C dist/release-linux .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMonitor-Linux-x64.tar.gz
+          path: AgentMonitor-Linux-x64.tar.gz
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build AgentMonitor.app
+        run: |
+          mkdir -p dist/release-mac/AgentMonitor.app/Contents/MacOS dist/release-mac/AgentMonitor.app/Contents/Resources dist/release-mac/Scripts
+          swiftc -swift-version 5 -O -framework AppKit -framework SwiftUI -framework UserNotifications -framework Combine Sources/*.swift -o dist/release-mac/AgentMonitor.app/Contents/MacOS/AgentMonitor
+          cp Resources/Info.plist dist/release-mac/AgentMonitor.app/Contents/Info.plist
+          codesign --force --deep --sign - dist/release-mac/AgentMonitor.app
+          cp Scripts/*.py dist/release-mac/Scripts/
+          cp install.sh uninstall.sh dist/release-mac/
+          ditto -c -k --sequesterRsrc --keepParent dist/release-mac/AgentMonitor.app AgentMonitor-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMonitor-macOS.zip
+          path: AgentMonitor-macOS.zip
+
+  publish-release:
+    needs: [build-windows, build-linux, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/AgentMonitor-Windows-x64.zip/AgentMonitor-Windows-x64.zip
+            artifacts/AgentMonitor-Linux-x64.tar.gz/AgentMonitor-Linux-x64.tar.gz
+            artifacts/AgentMonitor-macOS.zip/AgentMonitor-macOS.zip

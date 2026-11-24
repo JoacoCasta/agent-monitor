@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 MONITOR_DIR = os.path.expanduser("~/.gemini/agent-monitor")
 HOOK_HANDLER_PATH = os.path.join(MONITOR_DIR, "hook-handler.py")
@@ -12,15 +13,47 @@ CLAUDE_STATUSLINE_PATH = os.path.join(MONITOR_DIR, "claude-statusline.py")
 CLAUDE_PREV_STATUSLINE_PATH = os.path.join(MONITOR_DIR, "claude-prev-statusline.json")
 
 ANTIGRAVITY_HOOKS_PATH = os.path.expanduser("~/.gemini/config/hooks.json")
-CODEX_HOOKS_PATH = os.path.expanduser("~/.codex/hooks.json")
 CLAUDE_SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 
 MONITOR_MARKERS = (
     "agent-monitor/hook-handler.py",
+    "agent-monitor\\hook-handler.py",
     "antigravity-monitor/hook-handler.py",
 )
 
+STATUSLINE_MARKERS = (
+    "claude-statusline.py",
+)
+
 PROVIDERS = ("antigravity", "codex", "claude")
+
+
+def get_codex_hooks_path():
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home and codex_home.strip():
+        return os.path.join(os.path.expanduser(codex_home.strip()), "hooks.json")
+    return os.path.expanduser("~/.codex/hooks.json")
+
+
+def quote_path(path):
+    if " " in path or "\t" in path:
+        return '"{}"'.format(path)
+    return path
+
+
+def resolve_python_for_hooks():
+    env_py = os.environ.get("AGENT_MONITOR_PYTHON")
+    if env_py and os.path.isfile(env_py):
+        return env_py
+    if sys.platform == "darwin" and os.path.isfile("/usr/bin/python3"):
+        return "/usr/bin/python3"
+    if not getattr(sys, "frozen", False) and sys.executable and os.path.isfile(sys.executable):
+        return sys.executable
+    for cand in ("python3", "python"):
+        found = shutil.which(cand)
+        if found:
+            return found
+    return sys.executable or "python3"
 
 
 def read_json_dict(path):
@@ -41,7 +74,16 @@ def write_json_atomic(path, data):
         with os.fdopen(fd, "w", encoding="utf-8") as tf:
             json.dump(data, tf, indent=2, ensure_ascii=False)
             tf.write("\n")
-        os.replace(tmp_path, path)
+        last_err = None
+        for _ in range(3):
+            try:
+                os.replace(tmp_path, path)
+                return
+            except PermissionError as exc:
+                last_err = exc
+                time.sleep(0.03)
+        if last_err is not None:
+            raise last_err
     except Exception:
         try:
             if os.path.exists(tmp_path):
@@ -91,13 +133,16 @@ def has_monitor_groups(events_dict):
 # --- Antigravity ---
 
 def enable_antigravity():
+    py_exe = resolve_python_for_hooks()
     data = read_json_dict(ANTIGRAVITY_HOOKS_PATH)
     data.pop("antigravity-monitor", None)
 
     def cmd(event):
         return {
             "type": "command",
-            "command": "/usr/bin/python3 {} antigravity {}".format(HOOK_HANDLER_PATH, event),
+            "command": "{} {} antigravity {}".format(
+                quote_path(py_exe), quote_path(HOOK_HANDLER_PATH), event
+            ),
             "timeout": 5,
         }
 
@@ -144,8 +189,10 @@ def is_antigravity_installed():
 # --- Codex ---
 
 def enable_codex():
-    os.makedirs(os.path.dirname(CODEX_HOOKS_PATH), exist_ok=True)
-    data = read_json_dict(CODEX_HOOKS_PATH)
+    py_exe = resolve_python_for_hooks()
+    codex_hooks_path = get_codex_hooks_path()
+    os.makedirs(os.path.dirname(codex_hooks_path), exist_ok=True)
+    data = read_json_dict(codex_hooks_path)
     hooks = strip_monitor_groups(data.get("hooks"))
 
     def group(event, matcher=None):
@@ -153,7 +200,9 @@ def enable_codex():
             "hooks": [
                 {
                     "type": "command",
-                    "command": "/usr/bin/python3 {} codex {}".format(HOOK_HANDLER_PATH, event),
+                    "command": "{} {} codex {}".format(
+                        quote_path(py_exe), quote_path(HOOK_HANDLER_PATH), event
+                    ),
                     "timeout": 5,
                 }
             ]
@@ -183,31 +232,33 @@ def enable_codex():
         hooks[ev_name] = arr
 
     data["hooks"] = hooks
-    write_json_atomic(CODEX_HOOKS_PATH, data)
+    write_json_atomic(codex_hooks_path, data)
 
 
 def disable_codex():
-    if not os.path.exists(CODEX_HOOKS_PATH):
+    codex_hooks_path = get_codex_hooks_path()
+    if not os.path.exists(codex_hooks_path):
         return
-    data = read_json_dict(CODEX_HOOKS_PATH)
+    data = read_json_dict(codex_hooks_path)
     hooks = strip_monitor_groups(data.get("hooks"))
     if hooks:
         data["hooks"] = hooks
-        write_json_atomic(CODEX_HOOKS_PATH, data)
+        write_json_atomic(codex_hooks_path, data)
     else:
         data.pop("hooks", None)
         remaining = {k: v for k, v in data.items() if k != "description"}
         if remaining:
-            write_json_atomic(CODEX_HOOKS_PATH, data)
+            write_json_atomic(codex_hooks_path, data)
         else:
-            os.remove(CODEX_HOOKS_PATH)
+            os.remove(codex_hooks_path)
 
 
 def is_codex_installed():
-    if not os.path.exists(CODEX_HOOKS_PATH):
+    codex_hooks_path = get_codex_hooks_path()
+    if not os.path.exists(codex_hooks_path):
         return False
     try:
-        data = read_json_dict(CODEX_HOOKS_PATH)
+        data = read_json_dict(codex_hooks_path)
         return has_monitor_groups(data.get("hooks"))
     except Exception:
         return False
@@ -216,6 +267,7 @@ def is_codex_installed():
 # --- Claude Code ---
 
 def enable_claude():
+    py_exe = resolve_python_for_hooks()
     os.makedirs(os.path.dirname(CLAUDE_SETTINGS_PATH), exist_ok=True)
     os.makedirs(MONITOR_DIR, exist_ok=True)
     data = read_json_dict(CLAUDE_SETTINGS_PATH)
@@ -226,7 +278,9 @@ def enable_claude():
             "hooks": [
                 {
                     "type": "command",
-                    "command": "/usr/bin/python3 {} claude {}".format(HOOK_HANDLER_PATH, event),
+                    "command": "{} {} claude {}".format(
+                        quote_path(py_exe), quote_path(HOOK_HANDLER_PATH), event
+                    ),
                     "timeout": 5,
                 }
             ]
@@ -262,14 +316,14 @@ def enable_claude():
     existing_sl = data.get("statusLine")
     if (
         isinstance(existing_sl, dict)
-        and "claude-statusline.py" not in str(existing_sl.get("command") or "")
+        and not any(m in str(existing_sl.get("command") or "") for m in STATUSLINE_MARKERS)
         and not os.path.exists(CLAUDE_PREV_STATUSLINE_PATH)
     ):
         write_json_atomic(CLAUDE_PREV_STATUSLINE_PATH, existing_sl)
 
     data["statusLine"] = {
         "type": "command",
-        "command": "/usr/bin/python3 {}".format(CLAUDE_STATUSLINE_PATH),
+        "command": "{} {}".format(quote_path(py_exe), quote_path(CLAUDE_STATUSLINE_PATH)),
     }
 
     write_json_atomic(CLAUDE_SETTINGS_PATH, data)
@@ -285,7 +339,9 @@ def disable_claude():
             data.pop("hooks", None)
 
         sl = data.get("statusLine")
-        if isinstance(sl, dict) and "claude-statusline.py" in str(sl.get("command") or ""):
+        if isinstance(sl, dict) and any(
+            m in str(sl.get("command") or "") for m in STATUSLINE_MARKERS
+        ):
             if os.path.exists(CLAUDE_PREV_STATUSLINE_PATH):
                 try:
                     prev = read_json_dict(CLAUDE_PREV_STATUSLINE_PATH)
@@ -318,45 +374,137 @@ def is_claude_installed():
         return False
 
 
+def detect_app_installed(provider):
+    if sys.platform == "darwin":
+        app_map = {
+            "antigravity": "/Applications/Antigravity.app",
+            "codex": "/Applications/ChatGPT.app",
+            "claude": "/Applications/Claude.app",
+        }
+        return os.path.exists(app_map[provider])
+
+    if os.name == "nt":
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        prog_files = os.environ.get("ProgramFiles", "")
+        if provider == "antigravity":
+            return any(
+                os.path.exists(p)
+                for p in [
+                    os.path.join(local_app, "Programs", "Antigravity", "Antigravity.exe"),
+                    os.path.join(local_app, "Antigravity", "Antigravity.exe"),
+                    os.path.join(prog_files, "Antigravity", "Antigravity.exe"),
+                ]
+                if local_app or prog_files
+            ) or os.path.isdir(os.path.expanduser("~/.gemini/antigravity"))
+        if provider == "codex":
+            return any(
+                os.path.exists(p)
+                for p in [
+                    os.path.join(local_app, "Programs", "ChatGPT", "ChatGPT.exe"),
+                    os.path.join(local_app, "Programs", "Codex", "Codex.exe"),
+                ]
+                if local_app
+            ) or os.path.isdir(os.path.expanduser("~/.codex"))
+        if provider == "claude":
+            return any(
+                os.path.exists(p)
+                for p in [
+                    os.path.join(local_app, "AnthropicClaude", "claude.exe"),
+                    os.path.join(local_app, "Programs", "Claude", "Claude.exe"),
+                ]
+                if local_app
+            ) or os.path.isdir(os.path.expanduser("~/.claude"))
+        return False
+
+    # Linux
+    if provider == "antigravity":
+        return (
+            bool(shutil.which("antigravity"))
+            or os.path.exists("/usr/share/applications/antigravity.desktop")
+            or os.path.exists(os.path.expanduser("~/.local/share/applications/antigravity.desktop"))
+            or os.path.isdir(os.path.expanduser("~/.gemini/antigravity"))
+        )
+    if provider == "codex":
+        return bool(shutil.which("codex")) or os.path.isdir(os.path.expanduser("~/.codex"))
+    if provider == "claude":
+        return (
+            bool(shutil.which("claude"))
+            or os.path.exists("/usr/share/applications/claude.desktop")
+            or os.path.exists(os.path.expanduser("~/.local/share/applications/claude.desktop"))
+            or os.path.isdir(os.path.expanduser("~/.claude"))
+        )
+    return False
+
+
 def get_status():
+    local_app = os.environ.get("LOCALAPPDATA", "") if os.name == "nt" else ""
+    appdata = os.environ.get("APPDATA", "") if os.name == "nt" else ""
+
+    agy_candidates = [
+        os.path.expanduser("~/.gemini/bin/agy"),
+        os.path.expanduser("~/.gemini/bin/agy.exe"),
+        shutil.which("agy"),
+        shutil.which("agy.exe"),
+        "/usr/local/bin/agy",
+        "/opt/homebrew/bin/agy",
+    ]
+    if local_app:
+        agy_candidates.extend(
+            [
+                os.path.join(local_app, "Antigravity", "agy.exe"),
+                os.path.join(local_app, "Programs", "Antigravity", "agy.exe"),
+            ]
+        )
+
+    codex_candidates = [
+        shutil.which("codex"),
+        shutil.which("codex.exe"),
+        shutil.which("codex.cmd"),
+        "/opt/homebrew/bin/codex",
+        "/usr/local/bin/codex",
+        os.path.expanduser("~/.local/bin/codex"),
+        "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+    ]
+    if appdata:
+        codex_candidates.append(os.path.join(appdata, "npm", "codex.cmd"))
+    if local_app:
+        codex_candidates.extend(
+            [
+                os.path.join(local_app, "Programs", "ChatGPT", "resources", "codex-cli", "codex.exe"),
+                os.path.join(local_app, "Programs", "Codex", "codex.exe"),
+            ]
+        )
+
     agy_bin = any(
-        p and os.path.isfile(p) and os.access(p, os.X_OK)
-        for p in [
-            os.path.expanduser("~/.gemini/bin/agy"),
-            shutil.which("agy"),
-            "/usr/local/bin/agy",
-            "/opt/homebrew/bin/agy",
-        ]
+        p and os.path.isfile(p) and (os.name == "nt" or os.access(p, os.X_OK))
+        for p in agy_candidates
     )
     codex_bin = any(
-        p and os.path.isfile(p) and os.access(p, os.X_OK)
-        for p in [
-            shutil.which("codex"),
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex",
-            os.path.expanduser("~/.local/bin/codex"),
-            "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
-        ]
+        p and os.path.isfile(p) and (os.name == "nt" or os.access(p, os.X_OK))
+        for p in codex_candidates
     )
-    claude_bin = bool(shutil.which("claude")) or os.path.isdir(
-        os.path.expanduser("~/.claude")
+    claude_bin = (
+        bool(shutil.which("claude"))
+        or bool(shutil.which("claude.exe"))
+        or bool(shutil.which("claude.cmd"))
+        or os.path.isdir(os.path.expanduser("~/.claude"))
     )
 
     return {
         "antigravity": {
             "hooksInstalled": is_antigravity_installed(),
             "binaryFound": agy_bin,
-            "appInstalled": os.path.exists("/Applications/Antigravity.app"),
+            "appInstalled": detect_app_installed("antigravity"),
         },
         "codex": {
             "hooksInstalled": is_codex_installed(),
             "binaryFound": codex_bin,
-            "appInstalled": os.path.exists("/Applications/ChatGPT.app"),
+            "appInstalled": detect_app_installed("codex"),
         },
         "claude": {
             "hooksInstalled": is_claude_installed(),
             "binaryFound": claude_bin,
-            "appInstalled": os.path.exists("/Applications/Claude.app"),
+            "appInstalled": detect_app_installed("claude"),
         },
     }
 
