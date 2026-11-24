@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var hostingController: NSHostingController<PopoverView>!
     private var store: StateStore!
     private var cancellables: Set<AnyCancellable> = []
+    private var appearanceObservation: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -48,6 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             button.target = self
             button.action = #selector(handleStatusItemClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            appearanceObservation = button.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    self?.updateStatusItemAppearance()
+                }
+            }
         }
 
         bindStoreToStatusBar()
@@ -96,8 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let t = store.l10n
         let result = NSMutableAttributedString()
-        let tagFont = NSFont.systemFont(ofSize: 11.0, weight: .bold)
         let pctFont = NSFont.monospacedDigitSystemFont(ofSize: 12.0, weight: .medium)
+        let logoSize: CGFloat = 13.5
+        let logoYOffset = round((pctFont.capHeight - logoSize) / 2.0)
         let dotDiameter: CGFloat = 8.0
         let dotYOffset = floor((pctFont.capHeight - dotDiameter) / 2.0)
         var tooltipParts: [String] = []
@@ -106,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if index > 0 {
                 result.append(
                     NSAttributedString(
-                        string: "  ",
+                        string: "   ",
                         attributes: [.font: pctFont]
                     )
                 )
@@ -116,13 +123,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let pct = store.menuBarPercent(for: provider)
             let isLow = store.isMenuBarLow(for: provider)
 
+            let logoAttachment = NSTextAttachment()
+            logoAttachment.image = ProviderLogoRenderer.menuBarImage(
+                for: provider,
+                size: logoSize,
+                appearance: button.effectiveAppearance
+            )
+            logoAttachment.bounds = NSRect(x: 0, y: logoYOffset, width: logoSize, height: logoSize)
+            result.append(NSAttributedString(attachment: logoAttachment))
+
             result.append(
                 NSAttributedString(
-                    string: "\(provider.shortTag) ",
-                    attributes: [
-                        .font: tagFont,
-                        .foregroundColor: NSColor.labelColor,
-                    ]
+                    string: "\u{2009}",
+                    attributes: [.font: pctFont]
                 )
             )
 

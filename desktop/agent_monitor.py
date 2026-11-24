@@ -2,6 +2,7 @@
 import argparse
 import datetime
 import json
+import math
 import os
 import subprocess
 import sys
@@ -68,6 +69,7 @@ def main_gui():
         QFileSystemWatcher,
         QObject,
         QPoint,
+        QPointF,
         QRect,
         Qt,
         QTimer,
@@ -80,6 +82,7 @@ def main_gui():
         QGuiApplication,
         QIcon,
         QPainter,
+        QPainterPath,
         QPen,
         QPixmap,
     )
@@ -119,6 +122,84 @@ def main_gui():
         if status == "active":
             return "#FF3B30"
         return "#34C759"
+
+    def make_provider_logo_pixmap(provider, size, color_hex):
+        dpr = 2.0
+        px_size = int(round(size * dpr))
+        pixmap = QPixmap(px_size, px_size)
+        pixmap.fill(Qt.transparent)
+        pixmap.setDevicePixelRatio(dpr)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        scale = size / 24.0
+        painter.scale(scale, scale)
+        color = QColor(color_hex)
+
+        if provider == "antigravity":
+            path = QPainterPath()
+            path.moveTo(2.9, 20.3)
+            path.cubicTo(5.0, 13.8, 8.6, 2.3, 12.0, 2.3)
+            path.cubicTo(15.4, 2.3, 19.0, 13.8, 21.1, 20.3)
+            path.cubicTo(21.7, 21.7, 18.9, 22.1, 17.3, 20.8)
+            path.cubicTo(15.3, 17.2, 13.9, 11.4, 12.0, 11.4)
+            path.cubicTo(10.1, 11.4, 8.7, 17.2, 6.7, 20.8)
+            path.cubicTo(5.1, 22.1, 2.3, 21.7, 2.9, 20.3)
+            path.closeSubpath()
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color)
+            painter.drawPath(path)
+        elif provider == "codex":
+            cx, cy = 12.0, 12.0
+            lobe_dist = 5.0
+            apothem = 2.55
+            lobe_r = 0.5 * lobe_dist + apothem
+            hex_r = apothem / (math.sqrt(3.0) / 2.0)
+
+            path = QPainterPath()
+            for k in range(6):
+                theta = k * (math.pi / 3.0) - (math.pi / 2.0)
+                lx = cx + lobe_dist * math.cos(theta)
+                ly = cy + lobe_dist * math.sin(theta)
+                v1_a = theta - (5.0 * math.pi / 6.0)
+                v2_a = theta + (math.pi / 2.0)
+                v_start = QPointF(cx + hex_r * math.cos(v1_a), cy + hex_r * math.sin(v1_a))
+                v_end = QPointF(cx + hex_r * math.cos(v2_a), cy + hex_r * math.sin(v2_a))
+
+                arc_start = theta - (2.0 * math.pi / 3.0)
+                t1 = QPointF(lx + lobe_r * math.cos(arc_start), ly + lobe_r * math.sin(arc_start))
+
+                path.moveTo(v_start)
+                path.lineTo(t1)
+                path.arcTo(
+                    lx - lobe_r,
+                    ly - lobe_r,
+                    2.0 * lobe_r,
+                    2.0 * lobe_r,
+                    -math.degrees(arc_start),
+                    -240.0,
+                )
+                path.lineTo(v_end)
+
+            painter.setPen(QPen(color, 1.55, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(path)
+        else:
+            cx, cy = 12.0, 12.0
+            lengths = [10.4, 8.7, 10.1, 8.9, 10.5, 8.6, 10.2, 9.0, 10.4, 8.7, 9.9, 9.1]
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color)
+            painter.drawEllipse(QPointF(cx, cy), 3.4, 3.4)
+            painter.setPen(QPen(color, 1.45, Qt.SolidLine, Qt.RoundCap))
+            step = (2.0 * math.pi) / 12.0
+            for idx, r_len in enumerate(lengths):
+                ang = idx * step - (math.pi / 2.0) + 0.08
+                tx = cx + (r_len - 0.7) * math.cos(ang)
+                ty = cy + (r_len - 0.7) * math.sin(ang)
+                painter.drawLine(QPointF(cx, cy), QPointF(tx, ty))
+
+        painter.end()
+        return pixmap
 
     class WorkerBridge(QObject):
         quota_fetched = Signal(str, object)
@@ -321,7 +402,7 @@ def main_gui():
                 st = self.core.status_by_provider.get(prov, "idle")
                 pct = self.core.menu_bar_percent(prov)
                 pct_str = "{}%".format(pct) if pct is not None else "--"
-                lines.append("{}: {} ({})".format(meta["short_tag"], t.status_title(st), pct_str))
+                lines.append("{}: {} ({})".format(meta["display_name"], t.status_title(st), pct_str))
             self.tray.setToolTip("\n".join(lines))
 
         def _rebuild_context_menu(self):
@@ -734,14 +815,14 @@ def main_gui():
                 info_col.addWidget(sl)
                 clay.addLayout(info_col, 1)
 
-                tag = QLabel(meta["short_tag"])
-                tag.setStyleSheet(
-                    "font-size: 10px; font-weight: 700; color: {}; padding: 2px 6px; "
-                    "background-color: {}; border-radius: 4px; border: none;".format(
-                        self._theme["text_secondary"], self._theme["btn_bg"]
+                logo_lbl = QLabel()
+                logo_lbl.setPixmap(make_provider_logo_pixmap(prov, 16, self._theme["text_primary"]))
+                logo_lbl.setStyleSheet(
+                    "background-color: {}; border-radius: 6px; padding: 5px; border: none;".format(
+                        self._theme["btn_bg"]
                     )
                 )
-                clay.addWidget(tag)
+                clay.addWidget(logo_lbl)
                 lay.addWidget(card)
 
             hints = QLabel("{}\n{}".format(t.codex_trust_hint, t.claude_statusline_hint))
@@ -853,16 +934,13 @@ def main_gui():
                 col.setSpacing(2)
                 row1 = QHBoxLayout()
                 row1.setSpacing(6)
+                logo_lbl = QLabel()
+                logo_lbl.setPixmap(make_provider_logo_pixmap(prov, 13, self._theme["text_primary"]))
+                logo_lbl.setStyleSheet("border: none;")
+                row1.addWidget(logo_lbl)
                 nl = QLabel(meta["display_name"])
                 nl.setStyleSheet("font-size: 12px; font-weight: 600; border: none;")
                 row1.addWidget(nl)
-                tag = QLabel(meta["short_tag"])
-                tag.setStyleSheet(
-                    "font-size: 9.5px; font-weight: 700; color: {}; background-color: {}; border-radius: 4px; padding: 1px 5px; border: none;".format(
-                        self._theme["text_secondary"], self._theme["btn_bg"]
-                    )
-                )
-                row1.addWidget(tag)
                 row1.addStretch()
                 col.addLayout(row1)
 
@@ -1027,6 +1105,10 @@ def main_gui():
             title_col.setSpacing(1)
             nrow = QHBoxLayout()
             nrow.setSpacing(6)
+            logo_lbl = QLabel()
+            logo_lbl.setPixmap(make_provider_logo_pixmap(prov, 13, self._theme["text_primary"]))
+            logo_lbl.setStyleSheet("border: none;")
+            nrow.addWidget(logo_lbl)
             pname = QLabel(meta["display_name"])
             pname.setStyleSheet("font-size: 12px; font-weight: 700; border: none;")
             nrow.addWidget(pname)

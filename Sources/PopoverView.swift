@@ -112,12 +112,10 @@ struct PopoverView: View {
 
                                     Spacer(minLength: 4)
 
-                                    Text(provider.shortTag)
-                                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 3)
-                                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.06)))
+                                    ProviderLogoView(provider: provider, size: 15)
+                                        .foregroundStyle(.primary)
+                                        .frame(width: 28, height: 28)
+                                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
                                 }
                                 .padding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -284,14 +282,10 @@ struct PopoverView: View {
                             HStack(spacing: 10) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
+                                        ProviderLogoView(provider: provider, size: 13.5)
+                                            .foregroundStyle(.primary)
                                         Text(provider.displayName)
                                             .font(.system(size: 12.5, weight: .semibold))
-                                        Text(provider.shortTag)
-                                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 4)
-                                            .padding(.vertical, 1)
-                                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
                                     }
 
                                     HStack(spacing: 6) {
@@ -527,6 +521,8 @@ private struct ProviderCardView: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
+                        ProviderLogoView(provider: provider, size: 13)
+                            .foregroundStyle(.primary)
                         Text(provider.displayName)
                             .font(.system(size: 12.5, weight: .semibold))
 
