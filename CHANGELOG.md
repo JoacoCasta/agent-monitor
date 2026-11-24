@@ -4,6 +4,11 @@ All notable changes to **Agent Monitor** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-11-24
+
+### Added
+- **Toggleable Antigravity 3P Models**: Added a switch inside the Antigravity card in **Settings** (`Show 3P Models (Claude / GPT)` in all 7 languages) persisted via `showAntigravity3PModels` in `~/.gemini/agent-monitor/preferences.json`. Disabling it hides the 3P Models section on the Dashboard, shrinks the popover height cleanly, ignores 3P buckets for Menu Bar percentages, and suppresses low-quota notifications for 3P models.
+
 ## [3.0.0] - 2026-11-24
 
 ### Added

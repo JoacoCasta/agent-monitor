@@ -639,6 +639,18 @@ struct L10n {
         )
     }
 
+    var showThirdPartyModels: String {
+        tr(
+            en: "Show 3P Models (Claude / GPT)",
+            es: "Mostrar modelos 3P (Claude / GPT)",
+            pt: "Mostrar modelos 3P (Claude / GPT)",
+            fr: "Afficher les modèles 3P (Claude / GPT)",
+            de: "3P-Modelle anzeigen (Claude / GPT)",
+            zh: "显示 3P 模型 (Claude / GPT)",
+            ja: "3P モデルを表示 (Claude / GPT)"
+        )
+    }
+
     func groupDisplayName(groupKey: String?, fallback: String) -> String {
         switch groupKey {
         case "gemini":

@@ -195,6 +195,7 @@ struct UserPreferences: Codable, Equatable {
     var enabledProviders: [AgentProvider]
     var hasCompletedOnboarding: Bool
     var language: AppLanguage?
+    var showAntigravity3PModels: Bool?
 }
 
 struct ProviderHookStatus: Codable, Equatable {

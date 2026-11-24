@@ -279,52 +279,78 @@ struct PopoverView: View {
                             let isOnlyOne = isEnabled && store.enabledProviders.count <= 1
                             let hookInfo = store.hookStatuses[provider]
 
-                            HStack(spacing: 10) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack(spacing: 6) {
-                                        ProviderLogoView(provider: provider, size: 14)
-                                            .foregroundStyle(.primary)
-                                        Text(provider.displayName)
-                                            .font(.system(size: 12.5, weight: .semibold))
-                                    }
+                            VStack(spacing: 8) {
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 6) {
+                                            ProviderLogoView(provider: provider, size: 14)
+                                                .foregroundStyle(.primary)
+                                            Text(provider.displayName)
+                                                .font(.system(size: 12.5, weight: .semibold))
+                                        }
 
-                                    HStack(spacing: 6) {
-                                        if let info = hookInfo {
-                                            Circle()
-                                                .fill(info.hooksInstalled ? readableGreen : Color.secondary.opacity(0.45))
-                                                .frame(width: 6, height: 6)
-                                            Text(info.hooksInstalled ? t.hooksActive : t.hooksDisabled)
-                                                .font(.system(size: 10.5))
-                                                .foregroundStyle(info.hooksInstalled ? readableGreen : .secondary)
-
-                                            if !info.binaryFound && !info.appInstalled {
-                                                Text(t.notDetected)
+                                        HStack(spacing: 6) {
+                                            if let info = hookInfo {
+                                                Circle()
+                                                    .fill(info.hooksInstalled ? readableGreen : Color.secondary.opacity(0.45))
+                                                    .frame(width: 6, height: 6)
+                                                Text(info.hooksInstalled ? t.hooksActive : t.hooksDisabled)
                                                     .font(.system(size: 10.5))
-                                                    .foregroundStyle(.orange)
+                                                    .foregroundStyle(info.hooksInstalled ? readableGreen : .secondary)
+
+                                                if !info.binaryFound && !info.appInstalled {
+                                                    Text(t.notDetected)
+                                                        .font(.system(size: 10.5))
+                                                        .foregroundStyle(.orange)
+                                                }
+                                            } else {
+                                                Text(t.checkingStatus)
+                                                    .font(.system(size: 10.5))
+                                                    .foregroundStyle(.secondary)
                                             }
-                                        } else {
-                                            Text(t.checkingStatus)
-                                                .font(.system(size: 10.5))
-                                                .foregroundStyle(.secondary)
                                         }
                                     }
+
+                                    Spacer()
+
+                                    Toggle(
+                                        "",
+                                        isOn: Binding(
+                                            get: { isEnabled },
+                                            set: { newValue in
+                                                store.setProvider(provider, enabled: newValue)
+                                            }
+                                        )
+                                    )
+                                    .labelsHidden()
+                                    .toggleStyle(.switch)
+                                    .controlSize(.small)
+                                    .disabled(isOnlyOne)
                                 }
 
-                                Spacer()
+                                if provider == .antigravity && isEnabled {
+                                    Divider()
 
-                                Toggle(
-                                    "",
-                                    isOn: Binding(
-                                        get: { isEnabled },
-                                        set: { newValue in
-                                            store.setProvider(provider, enabled: newValue)
-                                        }
-                                    )
-                                )
-                                .labelsHidden()
-                                .toggleStyle(.switch)
-                                .controlSize(.small)
-                                .disabled(isOnlyOne)
+                                    HStack(spacing: 8) {
+                                        Text(t.showThirdPartyModels)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+
+                                        Spacer()
+
+                                        Toggle(
+                                            "",
+                                            isOn: Binding(
+                                                get: { store.showAntigravity3PModels },
+                                                set: { store.setShowAntigravity3PModels($0) }
+                                            )
+                                        )
+                                        .labelsHidden()
+                                        .toggleStyle(.switch)
+                                        .controlSize(.mini)
+                                    }
+                                    .padding(.leading, 20)
+                                }
                             }
                             .padding(10)
                             .background(
@@ -423,6 +449,7 @@ struct PopoverView: View {
                             isFetching: store.fetchingProviders.contains(provider),
                             errorMessage: store.quotaErrors[provider],
                             activeAntigravityGroupKey: store.activeAntigravityGroupKey,
+                            showThirdPartyModels: store.showAntigravity3PModels,
                             now: store.now,
                             t: t,
                             onFocus: { onFocusProvider(provider) },
@@ -489,6 +516,7 @@ private struct ProviderCardView: View {
     let isFetching: Bool
     let errorMessage: String?
     let activeAntigravityGroupKey: String
+    let showThirdPartyModels: Bool
     let now: Date
     let t: L10n
     let onFocus: () -> Void
@@ -672,11 +700,11 @@ private struct ProviderCardView: View {
             if !geminiBuckets.isEmpty {
                 subGroupBlock(
                     title: "Gemini",
-                    isActiveGroup: activeAntigravityGroupKey == AntigravityQuotaGroupKey.gemini,
+                    isActiveGroup: showThirdPartyModels && (activeAntigravityGroupKey == AntigravityQuotaGroupKey.gemini),
                     buckets: geminiBuckets
                 )
             }
-            if !thirdPartyBuckets.isEmpty {
+            if showThirdPartyModels && !thirdPartyBuckets.isEmpty {
                 subGroupBlock(
                     title: t.thirdPartyGroupTitle,
                     isActiveGroup: activeAntigravityGroupKey == AntigravityQuotaGroupKey.thirdParty,

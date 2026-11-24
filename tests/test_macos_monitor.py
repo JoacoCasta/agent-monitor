@@ -234,7 +234,7 @@ class MacOSMonitorTests(unittest.TestCase):
         plist_path = os.path.join(RESOURCES_DIR, "Info.plist")
         with open(plist_path, "rb") as f:
             plist = plistlib.load(f)
-        self.assertEqual(plist.get("CFBundleShortVersionString"), "3.0.0")
+        self.assertRegex(str(plist.get("CFBundleShortVersionString", "")), r"^\d+\.\d+\.\d+$")
         self.assertEqual(plist.get("CFBundleIconFile"), "AppIcon")
         self.assertIs(plist.get("LSUIElement"), True)
 

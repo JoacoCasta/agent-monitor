@@ -10,6 +10,7 @@ final class StateStore: ObservableObject {
     @Published var launchAtLogin: Bool = LaunchAtLoginManager.isEnabled()
     @Published var showingSettings: Bool = false
     @Published var onboardingSelection: Set<AgentProvider> = Set(AgentProvider.allCases)
+    @Published var showAntigravity3PModels: Bool = true
 
     var l10n: L10n {
         L10n(language: appLanguage)
@@ -20,14 +21,14 @@ final class StateStore: ObservableObject {
             return 480
         }
         if showingSettings {
-            return 522
+            return enabledProviders.contains(.antigravity) ? 556 : 522
         }
         var bodyHeight: CGFloat = 20
         for provider in enabledProviders {
             let sessionCount = nonIdleSessions(for: provider).count
             let sessionHeight = CGFloat(sessionCount) * 48
             if provider == .antigravity {
-                bodyHeight += 250 + sessionHeight
+                bodyHeight += (showAntigravity3PModels ? 250 : 152) + sessionHeight
             } else {
                 bodyHeight += 145 + sessionHeight
             }
@@ -50,6 +51,9 @@ final class StateStore: ObservableObject {
     @Published private(set) var now: Date = Date()
 
     var activeAntigravityGroupKey: String {
+        guard showAntigravity3PModels else {
+            return AntigravityQuotaGroupKey.gemini
+        }
         let list = sessionsByProvider[.antigravity] ?? []
         let current = now
         let nonIdle = list.compactMap { s -> (SessionState, AgentStatus)? in
@@ -266,6 +270,12 @@ final class StateStore: ObservableObject {
         launchAtLogin = LaunchAtLoginManager.isEnabled()
     }
 
+    func setShowAntigravity3PModels(_ enabled: Bool) {
+        guard showAntigravity3PModels != enabled else { return }
+        showAntigravity3PModels = enabled
+        savePreferences()
+    }
+
     private func loadPreferences() {
         guard FileManager.default.fileExists(atPath: preferencesPath),
               let data = try? Data(contentsOf: URL(fileURLWithPath: preferencesPath)),
@@ -274,19 +284,22 @@ final class StateStore: ObservableObject {
             self.enabledProviders = AgentProvider.allCases
             self.hasCompletedOnboarding = false
             self.appLanguage = .system
+            self.showAntigravity3PModels = true
             return
         }
         let sorted = AgentProvider.sortedCanonical(prefs.enabledProviders)
         self.enabledProviders = sorted.isEmpty ? [.antigravity] : sorted
         self.hasCompletedOnboarding = prefs.hasCompletedOnboarding
         self.appLanguage = prefs.language ?? .system
+        self.showAntigravity3PModels = prefs.showAntigravity3PModels ?? true
     }
 
     private func savePreferences() {
         let prefs = UserPreferences(
             enabledProviders: enabledProviders,
             hasCompletedOnboarding: hasCompletedOnboarding,
-            language: appLanguage
+            language: appLanguage,
+            showAntigravity3PModels: showAntigravity3PModels
         )
         guard let encoded = try? JSONEncoder().encode(prefs) else { return }
         let tmpPath = (monitorDirPath as NSString).appendingPathComponent(".prefs-\(UUID().uuidString).json")
@@ -566,6 +579,13 @@ final class StateStore: ObservableObject {
         let fetchedDate = DateFormatting.isoBasic.date(from: snapshot.fetchedAt) ?? Date()
 
         for bucket in snapshot.activeBuckets where bucket.isLow {
+            if snapshot.provider == .antigravity && !showAntigravity3PModels {
+                let isThirdParty = (bucket.groupKey == AntigravityQuotaGroupKey.thirdParty)
+                    || (bucket.groupKey == nil && (bucket.group.contains("3P") || bucket.id.contains("3p")))
+                if isThirdParty {
+                    continue
+                }
+            }
             let key = "\(snapshot.provider.rawValue)|\(bucket.id)|\(bucket.resetTime)"
             if !notifiedLowQuotaKeys.contains(key) {
                 notifiedLowQuotaKeys.insert(key)

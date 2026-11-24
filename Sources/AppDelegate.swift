@@ -118,9 +118,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .store(in: &cancellables)
 
         store.$showingSettings
-            .combineLatest(store.$hasCompletedOnboarding)
+            .combineLatest(store.$hasCompletedOnboarding, store.$showAntigravity3PModels)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _ in
+            .sink { [weak self] _, _, _ in
+                self?.updateStatusItemAppearance()
                 self?.syncPopoverSize()
             }
             .store(in: &cancellables)
