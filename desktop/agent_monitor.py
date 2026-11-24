@@ -282,6 +282,7 @@ def main_gui():
             self.last_refresh_attempt = {}
             self.debounce_timers = {}
             self.last_notified_provider = None
+            self._last_tray_key = None
 
             self.tray = QSystemTrayIcon(self)
             self.tray.activated.connect(self._on_tray_activated)
@@ -300,7 +301,7 @@ def main_gui():
             self.watcher.directoryChanged.connect(self._on_dir_changed)
 
             self.tick_timer = QTimer(self)
-            self.tick_timer.setInterval(1000)
+            self.tick_timer.setInterval(15000)
             self.tick_timer.timeout.connect(self._on_tick)
             self.tick_timer.start()
 
@@ -450,6 +451,18 @@ def main_gui():
             return QIcon(pixmap)
 
         def _update_tray_visuals(self):
+            tray_key = tuple(
+                (
+                    prov,
+                    self.core.status_by_provider.get(prov, "idle"),
+                    self.core.menu_bar_percent(prov),
+                )
+                for prov in self.core.enabled_providers
+            ) + (self.core.app_language,)
+            if tray_key == self._last_tray_key:
+                return
+            self._last_tray_key = tray_key
+
             self.tray.setIcon(self._make_tray_icon())
             t = self.t
             lines = []
@@ -527,6 +540,8 @@ def main_gui():
             self.popup.show()
             self.popup.raise_()
             self.popup.activateWindow()
+            if self.tick_timer.interval() != 1000:
+                self.tick_timer.setInterval(1000)
 
         def _open_settings_from_menu(self):
             if self.core.has_completed_onboarding:
@@ -670,7 +685,11 @@ def main_gui():
                         self.refresh_quota(prov, force=True)
             self._update_tray_visuals()
             if self.popup.isVisible():
+                if self.tick_timer.interval() != 1000:
+                    self.tick_timer.setInterval(1000)
                 self._render_popup_contents()
+            elif self.tick_timer.interval() != 15000:
+                self.tick_timer.setInterval(15000)
 
         def _check_waiting_alerts(self, now_ts):
             t = self.t

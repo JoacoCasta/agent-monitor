@@ -4,13 +4,32 @@ import SwiftUI
 import UserNotifications
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSPopoverDelegate {
+    private struct StatusBarRenderItem: Equatable {
+        let provider: AgentProvider
+        let status: AgentStatus
+        let percent: Int?
+        let isLow: Bool
+    }
+
+    private struct StatusBarRenderKey: Equatable {
+        let items: [StatusBarRenderItem]
+        let language: AppLanguage
+        let isDarkMenuBar: Bool
+    }
+
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var hostingController: NSHostingController<PopoverView>!
     private var store: StateStore!
     private var cancellables: Set<AnyCancellable> = []
-    private var appearanceObservation: NSKeyValueObservation?
+    private var lastStatusBarKey: StatusBarRenderKey?
+    private var statusDotCache: [AgentStatus: NSImage] = [:]
+
+    deinit {
+        DistributedNotificationCenter.default().removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -41,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         popover = NSPopover()
         popover.behavior = .transient
         popover.animates = false
+        popover.delegate = self
         popover.contentViewController = hostingController
         syncPopoverSize()
 
@@ -50,12 +70,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             button.target = self
             button.action = #selector(handleStatusItemClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            appearanceObservation = button.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
-                Task { @MainActor [weak self] in
-                    self?.updateStatusItemAppearance()
-                }
-            }
         }
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(handleAppearanceOrSpaceChange),
+            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleAppearanceOrSpaceChange),
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
 
         bindStoreToStatusBar()
         updateStatusItemAppearance()
@@ -98,8 +126,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .store(in: &cancellables)
     }
 
+    @objc private func handleAppearanceOrSpaceChange() {
+        updateStatusItemAppearance()
+    }
+
+    func popoverWillShow(_ notification: Notification) {
+        store.setPopoverVisible(true)
+        updateStatusItemAppearance()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        store.setPopoverVisible(false)
+    }
+
     private func updateStatusItemAppearance() {
         guard let button = statusItem.button else { return }
+
+        let match = button.effectiveAppearance.bestMatch(from: [.darkAqua, .vibrantDark, .aqua, .vibrantLight])
+        let isDarkMenuBar = (match == .darkAqua || match == .vibrantDark)
+
+        let renderItems = store.enabledProviders.map { provider in
+            StatusBarRenderItem(
+                provider: provider,
+                status: store.status(for: provider),
+                percent: store.menuBarPercent(for: provider),
+                isLow: store.isMenuBarLow(for: provider)
+            )
+        }
+        let renderKey = StatusBarRenderKey(
+            items: renderItems,
+            language: store.appLanguage,
+            isDarkMenuBar: isDarkMenuBar
+        )
+        if renderKey == lastStatusBarKey {
+            return
+        }
+        lastStatusBarKey = renderKey
 
         let t = store.l10n
         let result = NSMutableAttributedString()
@@ -110,7 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let dotYOffset = floor((pctFont.capHeight - dotDiameter) / 2.0)
         var tooltipParts: [String] = []
 
-        for (index, provider) in store.enabledProviders.enumerated() {
+        for (index, item) in renderItems.enumerated() {
+            let provider = item.provider
             if index > 0 {
                 result.append(
                     NSAttributedString(
@@ -120,15 +183,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 )
             }
 
-            let status = store.status(for: provider)
-            let pct = store.menuBarPercent(for: provider)
-            let isLow = store.isMenuBarLow(for: provider)
+            let status = item.status
+            let pct = item.percent
+            let isLow = item.isLow
 
             let logoAttachment = NSTextAttachment()
             logoAttachment.image = ProviderLogoRenderer.menuBarImage(
                 for: provider,
                 size: logoSize,
-                appearance: button.effectiveAppearance
+                isDark: isDarkMenuBar
             )
             logoAttachment.bounds = NSRect(x: 0, y: logoYOffset, width: logoSize, height: logoSize)
             result.append(NSAttributedString(attachment: logoAttachment))
@@ -141,7 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             )
 
             let attachment = NSTextAttachment()
-            attachment.image = makeStatusDotImage(color: status.nsColor, size: dotDiameter)
+            attachment.image = statusDotImage(for: status, size: dotDiameter)
             attachment.bounds = NSRect(x: 0, y: dotYOffset, width: dotDiameter, height: dotDiameter)
             result.append(NSAttributedString(attachment: attachment))
 
@@ -166,20 +229,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         button.toolTip = tooltipParts.joined(separator: "\n")
     }
 
-    private func makeStatusDotImage(color: NSColor, size dotSize: CGFloat) -> NSImage {
-        let size = NSSize(width: dotSize, height: dotSize)
-        let image = NSImage(size: size, flipped: false) { rect in
-            let dotRect = rect.insetBy(dx: 0.5, dy: 0.5)
-            let path = NSBezierPath(ovalIn: dotRect)
-            color.setFill()
-            path.fill()
-
-            NSColor.black.withAlphaComponent(0.22).setStroke()
-            path.lineWidth = 0.75
-            path.stroke()
-            return true
+    private func statusDotImage(for status: AgentStatus, size dotSize: CGFloat) -> NSImage {
+        if let cached = statusDotCache[status] {
+            return cached
         }
+        let scale: CGFloat = 2.0
+        let pixelSize = max(2, Int((dotSize * scale).rounded()))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelSize,
+            pixelsHigh: pixelSize,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ),
+              let nsCtx = NSGraphicsContext(bitmapImageRep: rep)
+        else {
+            return NSImage(size: NSSize(width: dotSize, height: dotSize))
+        }
+
+        rep.size = NSSize(width: dotSize, height: dotSize)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsCtx
+        let dotRect = NSRect(origin: .zero, size: NSSize(width: dotSize, height: dotSize)).insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(ovalIn: dotRect)
+        status.nsColor.setFill()
+        path.fill()
+        NSColor.black.withAlphaComponent(0.22).setStroke()
+        path.lineWidth = 0.75
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let image = NSImage(size: NSSize(width: dotSize, height: dotSize))
+        image.addRepresentation(rep)
         image.isTemplate = false
+        statusDotCache[status] = image
         return image
     }
 

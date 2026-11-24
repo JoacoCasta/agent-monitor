@@ -4,6 +4,13 @@ All notable changes to **Agent Monitor** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-11-24
+
+### Fixed
+- **macOS Menu Bar 96% CPU redraw loop**: Removed the re-entrant `NSStatusBarButton.effectiveAppearance` KVO observer that triggered AppKit's `NSStatusItem` replicant redraw loop on every frame, replacing it with system theme/space change notifications and `StatusBarRenderKey` equality guards.
+- **Bitmap caching**: Pre-rasterized 2x Retina bitmaps for provider logos (`Sources/ProviderLogo.swift`) and status dots (`Sources/AppDelegate.swift`) instead of re-invoking CoreGraphics drawing closures on every repaint.
+- **Adaptive idle timers**: Switched `Sources/StateStore.swift` and `desktop/agent_monitor.py` (Windows/Linux) to 15s coalesced background ticks when the popup is closed (1s only while open), added `Equatable` / tray-key guards to prevent redundant UI updates, and skipped hidden SwiftUI countdown churn.
+
 ## [2.3.0] - 2026-11-24
 
 ### Added

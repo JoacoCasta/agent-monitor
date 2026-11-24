@@ -339,9 +339,13 @@ class CrossPlatformTests(unittest.TestCase):
         self.assertEqual((reserved, ico_type), (0, 1))
         self.assertGreaterEqual(count, 4)
 
+        import plistlib
+        with open(os.path.join(REPO_ROOT, "Resources", "Info.plist"), "rb") as f:
+            plist_ver = plistlib.load(f)["CFBundleShortVersionString"]
+
         with open(os.path.join(REPO_ROOT, "windows", "installer.iss"), "r", encoding="utf-8") as f:
             iss = f.read()
-        self.assertIn("AppVersion=2.3.0", iss)
+        self.assertIn("AppVersion={}".format(plist_ver), iss)
         self.assertIn("SetupIconFile=icon.ico", iss)
 
         with open(os.path.join(REPO_ROOT, "linux", "install.sh"), "r", encoding="utf-8") as f:

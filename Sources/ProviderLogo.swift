@@ -30,26 +30,67 @@ enum ProviderLogoRenderer {
         cachedPaths[provider] ?? CGPath(rect: .zero, transform: nil)
     }
 
+    private static var menuBarCache: [String: NSImage] = [:]
+
     static func menuBarImage(
         for provider: AgentProvider,
         size: CGFloat = 14.0,
         appearance: NSAppearance? = nil
     ) -> NSImage {
-        let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
-            let targetAppearance = appearance ?? NSAppearance.currentDrawing()
-            let match = targetAppearance.bestMatch(from: [.darkAqua, .vibrantDark, .aqua, .vibrantLight])
-            let isDark = (match == .darkAqua || match == .vibrantDark)
-            let resolvedColor = isDark ? NSColor.white : NSColor.black
+        let targetAppearance = appearance ?? NSAppearance.currentDrawing()
+        let match = targetAppearance.bestMatch(from: [.darkAqua, .vibrantDark, .aqua, .vibrantLight])
+        let isDark = (match == .darkAqua || match == .vibrantDark)
+        return menuBarImage(for: provider, size: size, isDark: isDark)
+    }
 
-            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            ctx.saveGState()
-            ctx.setFillColor(resolvedColor.cgColor)
-            ctx.addPath(path(for: provider, in: rect.insetBy(dx: 0.25, dy: 0.25)))
-            ctx.fillPath(using: .winding)
-            ctx.restoreGState()
-            return true
+    static func menuBarImage(
+        for provider: AgentProvider,
+        size: CGFloat = 14.0,
+        isDark: Bool
+    ) -> NSImage {
+        let cacheKey = "\(provider.rawValue)-\(Int((size * 10).rounded()))-\(isDark ? 1 : 0)"
+        if let cached = menuBarCache[cacheKey] {
+            return cached
         }
+
+        let scale: CGFloat = 2.0
+        let pixelSize = max(2, Int((size * scale).rounded()))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelSize,
+            pixelsHigh: pixelSize,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ),
+              let nsCtx = NSGraphicsContext(bitmapImageRep: rep)
+        else {
+            return NSImage(size: NSSize(width: size, height: size))
+        }
+
+        rep.size = NSSize(width: size, height: size)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsCtx
+        let ctx = nsCtx.cgContext
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: size)
+        ctx.scaleBy(x: 1, y: -1)
+        let resolvedColor = isDark ? NSColor.white : NSColor.black
+        ctx.setFillColor(resolvedColor.cgColor)
+        let rect = CGRect(origin: .zero, size: CGSize(width: size, height: size)).insetBy(dx: 0.25, dy: 0.25)
+        ctx.addPath(path(for: provider, in: rect))
+        ctx.fillPath(using: .winding)
+        ctx.restoreGState()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let image = NSImage(size: NSSize(width: size, height: size))
+        image.addRepresentation(rep)
         image.isTemplate = false
+        menuBarCache[cacheKey] = image
         return image
     }
 

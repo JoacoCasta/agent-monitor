@@ -132,6 +132,7 @@ final class StateStore: ObservableObject {
     private let waitingStaleTimeout: TimeInterval = 2 * 3600
     private let periodicQuotaInterval: TimeInterval = 300
     private let turnDebounceInterval: TimeInterval = 5
+    private var isPopoverVisible: Bool = false
 
     init() {
         let dir = NSString(string: "~/.gemini/agent-monitor").expandingTildeInPath
@@ -148,7 +149,7 @@ final class StateStore: ObservableObject {
         loadState(triggerTurnRefresh: false)
         loadClaudeQuotaIfAvailable()
         startDirectoryWatcher()
-        startTimers()
+        rescheduleTickTimer()
         refreshHookStatuses()
         refreshAllEnabledQuotas(force: true)
     }
@@ -418,12 +419,27 @@ final class StateStore: ObservableObject {
         self.dirSource = source
     }
 
-    private func startTimers() {
-        tickTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+    func setPopoverVisible(_ visible: Bool) {
+        guard isPopoverVisible != visible else { return }
+        isPopoverVisible = visible
+        let current = Date()
+        if visible {
+            now = current
+            recomputeDerivedState(referenceDate: current)
+        }
+        rescheduleTickTimer()
+    }
+
+    private func rescheduleTickTimer() {
+        tickTimer?.invalidate()
+        let interval: TimeInterval = isPopoverVisible ? 1.0 : 15.0
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 let current = Date()
-                self.now = current
+                if self.isPopoverVisible {
+                    self.now = current
+                }
                 self.recomputeDerivedState(referenceDate: current)
 
                 for provider in self.enabledProviders where provider.supportsBackgroundPoll {
@@ -434,9 +450,9 @@ final class StateStore: ObservableObject {
                 }
             }
         }
-        if let tickTimer = tickTimer {
-            RunLoop.main.add(tickTimer, forMode: .common)
-        }
+        timer.tolerance = isPopoverVisible ? 0.2 : 3.0
+        tickTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func loadState(triggerTurnRefresh: Bool) {
@@ -513,8 +529,12 @@ final class StateStore: ObservableObject {
             statuses[provider] = best
         }
 
-        sessionsByProvider = grouped
-        statusByProvider = statuses
+        if sessionsByProvider != grouped {
+            sessionsByProvider = grouped
+        }
+        if statusByProvider != statuses {
+            statusByProvider = statuses
+        }
     }
 
     // MARK: - Notifications
