@@ -224,6 +224,136 @@ def focus_provider_app(provider):
                 pass
 
 
+def ensure_runtime_scripts_installed(dest_dir=None):
+    dest = os.path.expanduser(dest_dir or "~/.gemini/agent-monitor")
+    os.makedirs(dest, exist_ok=True)
+    src_dir = resolve_scripts_dir()
+    if os.path.abspath(src_dir) == os.path.abspath(dest):
+        return
+    for name in ("hook-handler.py", "fetch-quota.py", "claude-statusline.py", "configure-hooks.py"):
+        src = os.path.join(src_dir, name)
+        dst = os.path.join(dest, name)
+        if not os.path.isfile(src):
+            continue
+        try:
+            with open(src, "rb") as rf:
+                src_bytes = rf.read()
+            needs_copy = True
+            if os.path.isfile(dst):
+                with open(dst, "rb") as df:
+                    needs_copy = df.read() != src_bytes
+            if needs_copy:
+                fd, tmp_path = tempfile.mkstemp(prefix=".script-", suffix=".py", dir=dest)
+                with os.fdopen(fd, "wb") as wf:
+                    wf.write(src_bytes)
+                if os.name != "nt":
+                    os.chmod(tmp_path, 0o755)
+                os.replace(tmp_path, dst)
+                if os.name != "nt":
+                    os.chmod(dst, 0o755)
+        except Exception:
+            pass
+
+
+def is_launch_at_login_enabled():
+    if os.name == "nt":
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_READ,
+            ) as key:
+                winreg.QueryValueEx(key, "AgentMonitor")
+                return True
+        except Exception:
+            return False
+    if sys.platform == "darwin":
+        return os.path.exists(
+            os.path.expanduser("~/Library/LaunchAgents/com.agentmonitor.app.plist")
+        )
+    return os.path.exists(os.path.expanduser("~/.config/autostart/agent-monitor.desktop"))
+
+
+def set_launch_at_login(enabled):
+    if os.name == "nt":
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_SET_VALUE,
+            ) as key:
+                if enabled:
+                    if getattr(sys, "frozen", False):
+                        cmd = '"{}"'.format(os.path.abspath(sys.executable))
+                    else:
+                        pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                        py_cmd = pyw if os.path.isfile(pyw) else sys.executable
+                        entry = os.path.abspath(
+                            os.path.join(os.path.dirname(__file__), "agent_monitor.py")
+                        )
+                        cmd = '"{}" "{}"'.format(py_cmd, entry)
+                    winreg.SetValueEx(key, "AgentMonitor", 0, winreg.REG_SZ, cmd)
+                else:
+                    try:
+                        winreg.DeleteValue(key, "AgentMonitor")
+                    except FileNotFoundError:
+                        pass
+        except Exception:
+            pass
+        return
+
+    if sys.platform == "darwin":
+        plist_path = os.path.expanduser("~/Library/LaunchAgents/com.agentmonitor.app.plist")
+        if not enabled:
+            try:
+                subprocess.run(
+                    ["launchctl", "bootout", "gui/{}".format(os.getuid()), plist_path],
+                    capture_output=True,
+                )
+            except Exception:
+                pass
+            if os.path.exists(plist_path):
+                os.remove(plist_path)
+        return
+
+    autostart_path = os.path.expanduser("~/.config/autostart/agent-monitor.desktop")
+    if not enabled:
+        if os.path.exists(autostart_path):
+            os.remove(autostart_path)
+        return
+
+    os.makedirs(os.path.dirname(autostart_path), exist_ok=True)
+    if getattr(sys, "frozen", False):
+        exec_cmd = os.path.abspath(sys.executable)
+    else:
+        launcher = os.path.expanduser("~/.local/bin/agent-monitor")
+        if os.path.isfile(launcher):
+            exec_cmd = launcher
+        else:
+            exec_cmd = "{} {}".format(
+                sys.executable,
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "agent_monitor.py")),
+            )
+    desktop_body = (
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=Agent Monitor\n"
+        "Comment=System tray monitor for Antigravity, Codex, and Claude Code\n"
+        "Exec={}\n"
+        "Terminal=false\n"
+        "Categories=Development;Utility;\n"
+        "StartupNotify=false\n"
+    ).format(exec_cmd)
+    with open(autostart_path, "w", encoding="utf-8") as df:
+        df.write(desktop_body)
+
+
 class MonitorCore:
     def __init__(self, monitor_dir=None):
         self.monitor_dir = os.path.expanduser(monitor_dir or "~/.gemini/agent-monitor")
@@ -233,6 +363,7 @@ class MonitorCore:
         self.prefs_path = os.path.join(self.monitor_dir, "preferences.json")
 
         os.makedirs(self.monitor_dir, exist_ok=True)
+        ensure_runtime_scripts_installed(self.monitor_dir)
 
         self.enabled_providers = list(PROVIDERS)
         self.has_completed_onboarding = False

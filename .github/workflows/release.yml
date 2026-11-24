@@ -21,20 +21,32 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r desktop/requirements.txt pyinstaller
-      - name: Build AgentMonitor.exe
+      - name: Build AgentMonitor.exe and portable ZIP
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --windowed --onefile --name AgentMonitor --add-data "Scripts;Scripts" desktop/agent_monitor.py
           New-Item -ItemType Directory -Force -Path dist/release-win/Scripts | Out-Null
           Copy-Item dist/AgentMonitor.exe dist/release-win/AgentMonitor.exe
           Copy-Item Scripts/*.py dist/release-win/Scripts/
-          Copy-Item windows/install.ps1 dist/release-win/install.ps1
-          Copy-Item windows/uninstall.ps1 dist/release-win/uninstall.ps1
-          Compress-Archive -Path dist/release-win/* -DestinationPath AgentMonitor-Windows-x64.zip
+          Compress-Archive -Path dist/release-win/* -DestinationPath AgentMonitor-Windows-Portable.zip
+      - name: Build Windows Setup.exe (Inno Setup)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup -y --no-progress
+          }
+          $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+          if (-not $iscc) {
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc windows\installer.iss
+          Copy-Item dist\installer\AgentMonitor-Windows-Setup.exe AgentMonitor-Windows-Setup.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: AgentMonitor-Windows-x64.zip
-          path: AgentMonitor-Windows-x64.zip
+          name: windows-artifacts
+          path: |
+            AgentMonitor-Windows-Setup.exe
+            AgentMonitor-Windows-Portable.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -47,37 +59,76 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r desktop/requirements.txt pyinstaller
-      - name: Build agent-monitor binary
+      - name: Build binary, tar.gz, and .deb package
         run: |
           pyinstaller --noconfirm --clean --onefile --name agent-monitor --add-data "Scripts:Scripts" desktop/agent_monitor.py
           mkdir -p dist/release-linux/Scripts
           cp dist/agent-monitor dist/release-linux/agent-monitor
           cp Scripts/*.py dist/release-linux/Scripts/
-          cp linux/install.sh dist/release-linux/install.sh
-          cp linux/uninstall.sh dist/release-linux/uninstall.sh
+          cp linux/install.sh linux/uninstall.sh dist/release-linux/
           tar -czf AgentMonitor-Linux-x64.tar.gz -C dist/release-linux .
+
+          TAG_VER="${GITHUB_REF_NAME#v}"
+          if [ -z "$TAG_VER" ] || [ "$TAG_VER" = "main" ]; then TAG_VER="2.1.0"; fi
+          DEB_VER="$(echo "$TAG_VER" | sed 's/[^0-9.].*//')"
+          if [ -z "$DEB_VER" ]; then DEB_VER="2.1.0"; fi
+
+          mkdir -p dist/deb/DEBIAN dist/deb/usr/bin dist/deb/usr/share/applications
+          cp dist/agent-monitor dist/deb/usr/bin/agent-monitor
+          chmod 755 dist/deb/usr/bin/agent-monitor
+          cat > dist/deb/usr/share/applications/agent-monitor.desktop <<'DESKTOP'
+          [Desktop Entry]
+          Type=Application
+          Name=Agent Monitor
+          Comment=System tray monitor for Antigravity, Codex, and Claude Code
+          Exec=/usr/bin/agent-monitor
+          Terminal=false
+          Categories=Development;Utility;
+          StartupNotify=false
+          DESKTOP
+          cat > dist/deb/DEBIAN/control <<CONTROL
+          Package: agent-monitor
+          Version: $DEB_VER
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Agent Monitor Contributors
+          Description: System tray monitor for Antigravity, Codex, and Claude Code
+          CONTROL
+          dpkg-deb --build dist/deb AgentMonitor-Linux-x64.deb
       - uses: actions/upload-artifact@v4
         with:
-          name: AgentMonitor-Linux-x64.tar.gz
-          path: AgentMonitor-Linux-x64.tar.gz
+          name: linux-artifacts
+          path: |
+            AgentMonitor-Linux-x64.deb
+            AgentMonitor-Linux-x64.tar.gz
 
   build-macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build AgentMonitor.app
+      - name: Build AgentMonitor.app, DMG, and ZIP
         run: |
-          mkdir -p dist/release-mac/AgentMonitor.app/Contents/MacOS dist/release-mac/AgentMonitor.app/Contents/Resources dist/release-mac/Scripts
+          mkdir -p dist/release-mac/AgentMonitor.app/Contents/MacOS dist/release-mac/AgentMonitor.app/Contents/Resources/Scripts
           swiftc -swift-version 5 -O -framework AppKit -framework SwiftUI -framework UserNotifications -framework Combine Sources/*.swift -o dist/release-mac/AgentMonitor.app/Contents/MacOS/AgentMonitor
           cp Resources/Info.plist dist/release-mac/AgentMonitor.app/Contents/Info.plist
+          cp Scripts/*.py dist/release-mac/AgentMonitor.app/Contents/Resources/Scripts/
+          chmod 755 dist/release-mac/AgentMonitor.app/Contents/Resources/Scripts/*.py
           codesign --force --deep --sign - dist/release-mac/AgentMonitor.app
-          cp Scripts/*.py dist/release-mac/Scripts/
-          cp install.sh uninstall.sh dist/release-mac/
+          codesign --verify --deep --strict dist/release-mac/AgentMonitor.app
+
           ditto -c -k --sequesterRsrc --keepParent dist/release-mac/AgentMonitor.app AgentMonitor-macOS.zip
+
+          mkdir -p dist/dmg-root
+          cp -R dist/release-mac/AgentMonitor.app dist/dmg-root/AgentMonitor.app
+          ln -s /Applications dist/dmg-root/Applications
+          hdiutil create -volname "Agent Monitor" -srcfolder dist/dmg-root -ov -format UDZO AgentMonitor-macOS.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: AgentMonitor-macOS.zip
-          path: AgentMonitor-macOS.zip
+          name: macos-artifacts
+          path: |
+            AgentMonitor-macOS.dmg
+            AgentMonitor-macOS.zip
 
   publish-release:
     needs: [build-windows, build-linux, build-macos]
@@ -92,6 +143,9 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/AgentMonitor-Windows-x64.zip/AgentMonitor-Windows-x64.zip
-            artifacts/AgentMonitor-Linux-x64.tar.gz/AgentMonitor-Linux-x64.tar.gz
-            artifacts/AgentMonitor-macOS.zip/AgentMonitor-macOS.zip
+            artifacts/macos-artifacts/AgentMonitor-macOS.dmg
+            artifacts/macos-artifacts/AgentMonitor-macOS.zip
+            artifacts/windows-artifacts/AgentMonitor-Windows-Setup.exe
+            artifacts/windows-artifacts/AgentMonitor-Windows-Portable.zip
+            artifacts/linux-artifacts/AgentMonitor-Linux-x64.deb
+            artifacts/linux-artifacts/AgentMonitor-Linux-x64.tar.gz

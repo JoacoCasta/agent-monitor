@@ -4,6 +4,17 @@
 
 A lightweight, native system-tray / menu-bar monitor for **macOS**, **Windows**, and **Linux** to track live agent status and remaining quotas across **Google Antigravity**, **ChatGPT (Codex)**, and **Claude Code**.
 
+## Download (No Terminal Required)
+
+Download the latest ready-to-run installer for your OS from [GitHub Releases](https://github.com/JoacoCasta/agent-monitor/releases/latest):
+
+- **macOS (`AgentMonitor-macOS.dmg`)**: Open the `.dmg`, drag **Agent Monitor** to **Applications**, and launch it.
+  - *First launch on macOS*: Because this open-source app is not Apple-notarized yet, if macOS shows an "unidentified developer" notice, **Right-click (or Control-click) `AgentMonitor.app` → Open** once.
+- **Windows (`AgentMonitor-Windows-Setup.exe`)**: Double-click to install (no admin rights required) and launch directly into your system tray. A portable `AgentMonitor-Windows-Portable.zip` is also available.
+- **Linux (`AgentMonitor-Linux-x64.deb` / `AgentMonitor-Linux-x64.tar.gz`)**: Install the `.deb` via Software Center / `sudo apt install ./AgentMonitor-Linux-x64.deb`, or extract the `.tar.gz` and run `./agent-monitor`.
+
+All apps are **self-contained**: on first launch they automatically stage helper scripts, show an agent chooser, let you toggle **Start at login** inside **Settings**, and configure hooks safely with zero terminal setup.
+
 ## Features
 
 - **Compact tray / menu-bar indicator**:
@@ -31,9 +42,7 @@ A lightweight, native system-tray / menu-bar monitor for **macOS**, **Windows**,
 - **Codex**: If Codex CLI asks you to review newly added hooks in `~/.codex/hooks.json`, run `/hooks` once inside Codex to trust them.
 - **Claude Code**: Claude Code delivers `rate_limits` (`five_hour` and `seven_day`) through its official `statusLine` during active sessions. Your previous `statusLine` command (if any) is preserved and chained automatically, and restored on disable/uninstall.
 
-## Installation
-
-Prebuilt archives for **macOS**, **Windows**, and **Linux** are also built via GitHub Actions on tagged releases (`Releases` tab).
+## Build / Install from Source (Optional)
 
 ### macOS (14.0+, Xcode Command Line Tools)
 
@@ -42,8 +51,6 @@ git clone https://github.com/JoacoCasta/agent-monitor.git
 cd agent-monitor
 ./install.sh
 ```
-
-Builds `/Applications/AgentMonitor.app`, installs helper scripts in `~/.gemini/agent-monitor`, and registers a `LaunchAgent` (`com.agentmonitor.app`).
 
 **Uninstall:** `./uninstall.sh`
 
@@ -55,8 +62,6 @@ cd agent-monitor
 powershell -ExecutionPolicy Bypass -File .\windows\install.ps1
 ```
 
-Creates an isolated virtual environment with `PySide6` under `%USERPROFILE%\.gemini\agent-monitor\venv`, configures hooks, adds Startup & Start Menu shortcuts using `pythonw.exe` (no console window), and starts in the system tray.
-
 **Uninstall:** `powershell -ExecutionPolicy Bypass -File .\windows\uninstall.ps1`
 
 ### Linux (X11 / Wayland, Python 3.9+)
@@ -66,8 +71,6 @@ git clone https://github.com/JoacoCasta/agent-monitor.git
 cd agent-monitor
 ./linux/install.sh
 ```
-
-Installs into `~/.gemini/agent-monitor/venv` with `PySide6`, adds `~/.local/bin/agent-monitor`, registers autostart at `~/.config/autostart/agent-monitor.desktop`, and starts in the background.
 
 - **GNOME users**: Enable the *AppIndicator and KStatusNotifierItem Support* extension so tray icons appear in the top bar.
 - **Waybar / Polybar / scripts**: Run `agent-monitor --status-json` to get live JSON with each enabled provider's status, percentage, and quotas.

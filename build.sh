@@ -14,8 +14,9 @@ fi
 CONTENTS_DIR="$INSTALL_APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+BUNDLED_SCRIPTS_DIR="$RESOURCES_DIR/Scripts"
 
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$BUNDLED_SCRIPTS_DIR"
 
 /usr/bin/swiftc \
     -swift-version 5 \
@@ -28,6 +29,8 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
     -o "$MACOS_DIR/AgentMonitor"
 
 cp "$SCRIPT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
+cp "$SCRIPT_DIR"/Scripts/*.py "$BUNDLED_SCRIPTS_DIR/"
+chmod 755 "$BUNDLED_SCRIPTS_DIR"/*.py
 
 codesign --force --deep --sign - "$INSTALL_APP_DIR"
 

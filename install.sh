@@ -61,7 +61,7 @@ cat > "$PLIST_PATH" <<EOF
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <false/>
     <key>StandardOutPath</key>
     <string>$MONITOR_DIR/app.log</string>
     <key>StandardErrorPath</key>

@@ -7,11 +7,36 @@ final class StateStore: ObservableObject {
     @Published private(set) var enabledProviders: [AgentProvider] = AgentProvider.allCases
     @Published private(set) var hasCompletedOnboarding: Bool = false
     @Published var appLanguage: AppLanguage = .system
+    @Published var launchAtLogin: Bool = LaunchAtLoginManager.isEnabled()
     @Published var showingSettings: Bool = false
     @Published var onboardingSelection: Set<AgentProvider> = Set(AgentProvider.allCases)
 
     var l10n: L10n {
         L10n(language: appLanguage)
+    }
+
+    var preferredPopoverHeight: CGFloat {
+        if !hasCompletedOnboarding {
+            return 470
+        }
+        if showingSettings {
+            return 510
+        }
+        var bodyHeight: CGFloat = 20
+        for provider in enabledProviders {
+            let sessionCount = nonIdleSessions(for: provider).count
+            let sessionHeight = CGFloat(sessionCount) * 48
+            if provider == .antigravity {
+                bodyHeight += 250 + sessionHeight
+            } else {
+                bodyHeight += 145 + sessionHeight
+            }
+        }
+        if enabledProviders.count > 1 {
+            bodyHeight += CGFloat(enabledProviders.count - 1) * 10
+        }
+        let total = 44 + 40 + bodyHeight
+        return min(580, max(280, total))
     }
 
     @Published private(set) var sessionsByProvider: [AgentProvider: [SessionState]] = [:]
@@ -117,6 +142,7 @@ final class StateStore: ObservableObject {
         self.preferencesPath = (dir as NSString).appendingPathComponent("preferences.json")
 
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        RuntimeSetup.ensureRuntimeScriptsInstalled()
 
         loadPreferences()
         loadState(triggerTurnRefresh: false)
@@ -232,6 +258,11 @@ final class StateStore: ObservableObject {
     func setLanguage(_ lang: AppLanguage) {
         appLanguage = lang
         savePreferences()
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        LaunchAtLoginManager.setEnabled(enabled)
+        launchAtLogin = LaunchAtLoginManager.isEnabled()
     }
 
     private func loadPreferences() {

@@ -297,6 +297,18 @@ class L10n:
         )
 
     @property
+    def launch_at_login(self):
+        return self._tr(
+            en="Start at login",
+            es="Iniciar al encender",
+            pt="Iniciar com o sistema",
+            fr="Lancer au démarrage",
+            de="Bei Anmeldung starten",
+            zh="开机自动启动",
+            ja="ログイン時に起動",
+        )
+
+    @property
     def system_auto_label(self):
         return self._tr(
             en="Auto (OS)",

@@ -309,6 +309,18 @@ struct L10n {
         )
     }
 
+    var launchAtLogin: String {
+        tr(
+            en: "Start at login",
+            es: "Iniciar al encender",
+            pt: "Iniciar com o sistema",
+            fr: "Lancer au démarrage",
+            de: "Bei Anmeldung starten",
+            zh: "开机自动启动",
+            ja: "ログイン時に起動"
+        )
+    }
+
     var systemAutoLabel: String {
         tr(
             en: "Auto (macOS)",

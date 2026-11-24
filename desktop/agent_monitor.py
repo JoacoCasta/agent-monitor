@@ -18,9 +18,11 @@ from core import (
     PROVIDERS,
     MonitorCore,
     focus_provider_app,
+    is_launch_at_login_enabled,
     parse_iso_datetime,
     resolve_python_executable,
     resolve_scripts_dir,
+    set_launch_at_login,
 )
 from i18n import SUPPORTED_LANGUAGES, L10n
 
@@ -617,6 +619,10 @@ def main_gui():
             self._update_tray_visuals()
             self._render_popup_contents()
 
+        def _set_launch_at_login(self, enabled):
+            set_launch_at_login(bool(enabled))
+            self._render_popup_contents()
+
         def _clear_all_sessions(self):
             self.core.clear_all_sessions()
             self._update_tray_visuals()
@@ -762,7 +768,7 @@ def main_gui():
             t = self.t
             container = QWidget()
             lay = QVBoxLayout(container)
-            lay.setContentsMargins(14, 14, 14, 14)
+            lay.setContentsMargins(14, 12, 14, 12)
             lay.setSpacing(10)
 
             top_row = QHBoxLayout()
@@ -783,6 +789,17 @@ def main_gui():
             top_row.addWidget(done_btn)
             lay.addLayout(top_row)
 
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setMaximumHeight(440)
+
+            body = QWidget()
+            body.setStyleSheet("background: transparent;")
+            blay = QVBoxLayout(body)
+            blay.setContentsMargins(0, 0, 0, 0)
+            blay.setSpacing(8)
+
             # Language card
             lang_card = self._make_card_frame(self._theme["card_bg"])
             llay = QHBoxLayout(lang_card)
@@ -800,11 +817,26 @@ def main_gui():
                 lambda idx: self._set_language(lang_combo.itemData(idx))
             )
             llay.addWidget(lang_combo)
-            lay.addWidget(lang_card)
+            blay.addWidget(lang_card)
+
+            # Start at login card
+            auto_card = self._make_card_frame(self._theme["card_bg"])
+            alay = QHBoxLayout(auto_card)
+            alay.setContentsMargins(10, 7, 10, 7)
+            albl = QLabel("⏻ " + t.launch_at_login)
+            albl.setStyleSheet("font-size: 11.5px; font-weight: 600; border: none;")
+            alay.addWidget(albl)
+            alay.addStretch()
+
+            auto_cb = QCheckBox()
+            auto_cb.setChecked(is_launch_at_login_enabled())
+            auto_cb.toggled.connect(lambda checked: self._set_launch_at_login(checked))
+            alay.addWidget(auto_cb)
+            blay.addWidget(auto_card)
 
             ahdr = QLabel(t.active_agents_header)
             ahdr.setStyleSheet("font-size: 11px; font-weight: 600; color: {}; border: none;".format(self._theme["text_secondary"]))
-            lay.addWidget(ahdr)
+            blay.addWidget(ahdr)
 
             for prov in PROVIDERS:
                 meta = PROVIDER_META[prov]
@@ -853,12 +885,16 @@ def main_gui():
                 cb.setEnabled(not only_one)
                 cb.toggled.connect(lambda checked, p=prov: self._set_provider_enabled(p, checked))
                 clay.addWidget(cb)
-                lay.addWidget(card)
+                blay.addWidget(card)
 
             note = QLabel(t.hooks_auto_note)
             note.setWordWrap(True)
             note.setStyleSheet("font-size: 10px; color: {}; border: none;".format(self._theme["text_secondary"]))
-            lay.addWidget(note)
+            blay.addWidget(note)
+            blay.addStretch()
+
+            scroll.setWidget(body)
+            lay.addWidget(scroll)
 
             foot = QHBoxLayout()
             resync_btn = QPushButton(t.resync_hooks)

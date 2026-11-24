@@ -199,6 +199,7 @@ class CrossPlatformTests(unittest.TestCase):
                 self.assertTrue(t.status_title(st))
             self.assertTrue(t.choose_agents_title)
             self.assertTrue(t.settings_title)
+            self.assertTrue(t.launch_at_login)
             self.assertTrue(t.session_detail("running_tool", "Bash", "Running Bash"))
             self.assertTrue(t.bucket_label({"windowKind": "5h"}))
             self.assertTrue(t.bucket_label({"windowKind": "weekly"}))
@@ -254,6 +255,9 @@ class CrossPlatformTests(unittest.TestCase):
             )
 
         core = MonitorCore(mon_dir)
+        # Runtime scripts should be auto-installed into monitor_dir
+        self.assertTrue(os.path.isfile(os.path.join(mon_dir, "hook-handler.py")))
+        self.assertTrue(os.path.isfile(os.path.join(mon_dir, "configure-hooks.py")))
         # Yellow > Red priority
         self.assertEqual(core.status_by_provider["antigravity"], "waiting")
         # Prioritized waiting session uses Gemini model

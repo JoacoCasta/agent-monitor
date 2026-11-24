@@ -17,127 +17,127 @@ struct PopoverView: View {
                 dashboardView
             }
         }
-        .frame(width: 372)
+        .frame(width: 380, height: store.preferredPopoverHeight, alignment: .top)
     }
 
     // MARK: - Onboarding View
 
     private var onboardingView: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .center, spacing: 8) {
-                    Text(t.chooseAgentsTitle)
-                        .font(.system(size: 15, weight: .semibold))
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(t.chooseAgentsTitle)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
 
-                    Spacer()
+                Spacer()
 
-                    Menu {
-                        ForEach(AppLanguage.allCases) { lang in
-                            Button(action: { store.setLanguage(lang) }) {
-                                if store.appLanguage == lang {
-                                    Label(
-                                        lang.pickerLabel(systemAutoLabel: t.systemAutoLabel),
-                                        systemImage: "checkmark"
-                                    )
-                                } else {
-                                    Text(lang.pickerLabel(systemAutoLabel: t.systemAutoLabel))
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 11))
-                            Text(store.appLanguage.resolvedCode.uppercased())
-                                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { store.appLanguage },
+                        set: { store.setLanguage($0) }
+                    )
+                ) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.pickerLabel(systemAutoLabel: t.systemAutoLabel))
+                            .tag(lang)
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help(t.languageLabel)
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                .help(t.languageLabel)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
 
-                Text(t.chooseAgentsSubtitle)
-                    .font(.system(size: 11.5))
+            Divider()
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(t.chooseAgentsSubtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(spacing: 8) {
+                        ForEach(AgentProvider.allCases) { provider in
+                            let isSelected = store.onboardingSelection.contains(provider)
+                            let status = store.hookStatuses[provider]
+                            let isDetected = (status?.binaryFound == true) || (status?.appInstalled == true)
+
+                            Button(action: {
+                                store.toggleOnboardingProvider(provider)
+                            }) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(provider.displayName)
+                                                .font(.system(size: 12.5, weight: .semibold))
+                                                .foregroundStyle(.primary)
+                                            if isDetected {
+                                                Text(t.detectedBadge)
+                                                    .font(.system(size: 9.5, weight: .semibold))
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 1.5)
+                                                    .background(Capsule().fill(Color.green.opacity(0.16)))
+                                                    .foregroundStyle(.green)
+                                            }
+                                        }
+
+                                        Text(t.onboardingSubtitle(for: provider))
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+
+                                    Spacer(minLength: 4)
+
+                                    Text(provider.shortTag)
+                                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.06)))
+                                }
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color.primary.opacity(isSelected ? 0.06 : 0.03))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .strokeBorder(
+                                                    isSelected ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.08),
+                                                    lineWidth: 1
+                                                )
+                                        )
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(t.codexTrustHint)
+                        Text(t.claudeStatusLineHint)
+                    }
+                    .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-
-            VStack(spacing: 8) {
-                ForEach(AgentProvider.allCases) { provider in
-                    let isSelected = store.onboardingSelection.contains(provider)
-                    let status = store.hookStatuses[provider]
-                    let isDetected = (status?.binaryFound == true) || (status?.appInstalled == true)
-
-                    HStack(spacing: 10) {
-                        Toggle(
-                            "",
-                            isOn: Binding(
-                                get: { isSelected },
-                                set: { newVal in
-                                    store.toggleOnboardingProvider(provider, selected: newVal)
-                                }
-                            )
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.checkbox)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(provider.displayName)
-                                    .font(.system(size: 12.5, weight: .semibold))
-                                if isDetected {
-                                    Text(t.detectedBadge)
-                                        .font(.system(size: 9.5, weight: .semibold))
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 1.5)
-                                        .background(Capsule().fill(Color.green.opacity(0.16)))
-                                        .foregroundStyle(.green)
-                                }
-                            }
-
-                            Text(t.onboardingSubtitle(for: provider))
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Text(provider.shortTag)
-                            .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.06)))
-                    }
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.primary.opacity(isSelected ? 0.06 : 0.03))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .strokeBorder(
-                                        isSelected ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.08),
-                                        lineWidth: 1
-                                    )
-                            )
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        store.toggleOnboardingProvider(provider)
-                    }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(t.codexTrustHint)
-                Text(t.claudeStatusLineHint)
-            }
-            .font(.system(size: 10.5))
-            .foregroundStyle(.secondary)
+            Divider()
 
             HStack {
                 Button(t.quit) {
@@ -156,14 +156,15 @@ struct PopoverView: View {
                 .controlSize(.regular)
                 .disabled(store.onboardingSelection.isEmpty)
             }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
         }
-        .padding(14)
     }
 
     // MARK: - Settings View
 
     private var settingsView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(spacing: 0) {
             HStack {
                 Button(action: { store.showingSettings = false }) {
                     HStack(spacing: 4) {
@@ -185,6 +186,7 @@ struct PopoverView: View {
                 if store.isSyncingHooks {
                     ProgressView()
                         .controlSize(.small)
+                        .frame(width: 48, alignment: .trailing)
                 } else {
                     Button(t.done) {
                         store.showingSettings = false
@@ -193,109 +195,145 @@ struct PopoverView: View {
                     .controlSize(.small)
                 }
             }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
 
             Divider()
 
-            HStack {
-                Label(t.languageLabel, systemImage: "globe")
-                    .font(.system(size: 12, weight: .medium))
-                Spacer()
-                Picker(
-                    "",
-                    selection: Binding(
-                        get: { store.appLanguage },
-                        set: { store.setLanguage($0) }
-                    )
-                ) {
-                    ForEach(AppLanguage.allCases) { lang in
-                        Text(lang.pickerLabel(systemAutoLabel: t.systemAutoLabel))
-                            .tag(lang)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: 185)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.primary.opacity(0.045))
-            )
-
-            Text(t.activeAgentsHeader)
-                .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 8) {
-                ForEach(AgentProvider.allCases) { provider in
-                    let isEnabled = store.enabledProviders.contains(provider)
-                    let isOnlyOne = isEnabled && store.enabledProviders.count <= 1
-                    let hookInfo = store.hookStatuses[provider]
-
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                Text(provider.displayName)
-                                    .font(.system(size: 12.5, weight: .semibold))
-                                Text(provider.shortTag)
-                                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
-                            }
-
-                            HStack(spacing: 6) {
-                                if let info = hookInfo {
-                                    Circle()
-                                        .fill(info.hooksInstalled ? Color.green : Color.secondary.opacity(0.45))
-                                        .frame(width: 6, height: 6)
-                                    Text(info.hooksInstalled ? t.hooksActive : t.hooksDisabled)
-                                        .font(.system(size: 10.5))
-                                        .foregroundStyle(info.hooksInstalled ? .green : .secondary)
-
-                                    if !info.binaryFound && !info.appInstalled {
-                                        Text(t.notDetected)
-                                            .font(.system(size: 10.5))
-                                            .foregroundStyle(.orange)
-                                    }
-                                } else {
-                                    Text(t.checkingStatus)
-                                        .font(.system(size: 10.5))
-                                        .foregroundStyle(.secondary)
-                                }
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 10) {
+                    // Language card
+                    HStack(spacing: 8) {
+                        Label(t.languageLabel, systemImage: "globe")
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Picker(
+                            "",
+                            selection: Binding(
+                                get: { store.appLanguage },
+                                set: { store.setLanguage($0) }
+                            )
+                        ) {
+                            ForEach(AppLanguage.allCases) { lang in
+                                Text(lang.pickerLabel(systemAutoLabel: t.systemAutoLabel))
+                                    .tag(lang)
                             }
                         }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .fixedSize()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.primary.opacity(0.045))
+                    )
 
+                    // Start at login card
+                    HStack(spacing: 8) {
+                        Label(t.launchAtLogin, systemImage: "power")
+                            .font(.system(size: 12, weight: .medium))
                         Spacer()
-
                         Toggle(
                             "",
                             isOn: Binding(
-                                get: { isEnabled },
-                                set: { newValue in
-                                    store.setProvider(provider, enabled: newValue)
-                                }
+                                get: { store.launchAtLogin },
+                                set: { store.setLaunchAtLogin($0) }
                             )
                         )
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
-                        .disabled(isOnlyOne)
                     }
-                    .padding(10)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color.primary.opacity(0.045))
                     )
-                }
-            }
 
-            Text(t.hooksAutoNote)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                    Text(t.activeAgentsHeader)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+
+                    VStack(spacing: 8) {
+                        ForEach(AgentProvider.allCases) { provider in
+                            let isEnabled = store.enabledProviders.contains(provider)
+                            let isOnlyOne = isEnabled && store.enabledProviders.count <= 1
+                            let hookInfo = store.hookStatuses[provider]
+
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(provider.displayName)
+                                            .font(.system(size: 12.5, weight: .semibold))
+                                        Text(provider.shortTag)
+                                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06)))
+                                    }
+
+                                    HStack(spacing: 6) {
+                                        if let info = hookInfo {
+                                            Circle()
+                                                .fill(info.hooksInstalled ? Color.green : Color.secondary.opacity(0.45))
+                                                .frame(width: 6, height: 6)
+                                            Text(info.hooksInstalled ? t.hooksActive : t.hooksDisabled)
+                                                .font(.system(size: 10.5))
+                                                .foregroundStyle(info.hooksInstalled ? .green : .secondary)
+
+                                            if !info.binaryFound && !info.appInstalled {
+                                                Text(t.notDetected)
+                                                    .font(.system(size: 10.5))
+                                                    .foregroundStyle(.orange)
+                                            }
+                                        } else {
+                                            Text(t.checkingStatus)
+                                                .font(.system(size: 10.5))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+
+                                Spacer()
+
+                                Toggle(
+                                    "",
+                                    isOn: Binding(
+                                        get: { isEnabled },
+                                        set: { newValue in
+                                            store.setProvider(provider, enabled: newValue)
+                                        }
+                                    )
+                                )
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .disabled(isOnlyOne)
+                            }
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color.primary.opacity(0.045))
+                            )
+                        }
+                    }
+
+                    Text(t.hooksAutoNote)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
 
@@ -317,14 +355,15 @@ struct PopoverView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 14)
+            .frame(height: 40)
         }
-        .padding(14)
     }
 
     // MARK: - Dashboard View
 
     private var dashboardView: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text(t.appTitle)
                     .font(.system(size: 13.5, weight: .semibold))
@@ -357,7 +396,7 @@ struct PopoverView: View {
                 .help(t.settingsHelp)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 12)
+            .frame(height: 44)
 
             Divider()
 
@@ -381,9 +420,10 @@ struct PopoverView: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 4)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(maxHeight: 540)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
 
@@ -421,7 +461,7 @@ struct PopoverView: View {
                 .padding(.leading, 8)
             }
             .padding(.horizontal, 14)
-            .padding(.bottom, 12)
+            .frame(height: 40)
         }
     }
 }
@@ -763,17 +803,18 @@ private struct QuotaRowView: View {
             }
 
             GeometryReader { geo in
+                let totalWidth = max(0, geo.size.width)
+                let clampedFrac = CGFloat(max(0, min(1, bucket.remainingFraction)))
+                let fillWidth: CGFloat = pct == 0 ? 0 : min(totalWidth, max(4, totalWidth * clampedFrac))
+
                 ZStack(alignment: .leading) {
                     Capsule()
                         .fill(Color.primary.opacity(0.10))
-                    Capsule()
-                        .fill(bucket.barColor)
-                        .frame(
-                            width: max(
-                                4,
-                                geo.size.width * CGFloat(max(0, min(1, bucket.remainingFraction)))
-                            )
-                        )
+                    if fillWidth > 0 {
+                        Capsule()
+                            .fill(bucket.barColor)
+                            .frame(width: fillWidth)
+                    }
                 }
             }
             .frame(height: 5.5)

@@ -7,6 +7,7 @@ import UserNotifications
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private var hostingController: NSHostingController<PopoverView>!
     private var store: StateStore!
     private var cancellables: Set<AnyCancellable> = []
 
@@ -31,10 +32,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         )
 
+        hostingController = NSHostingController(rootView: popoverView)
+        if #available(macOS 13.0, *) {
+            hostingController.sizingOptions = []
+        }
+
         popover = NSPopover()
         popover.behavior = .transient
-        popover.animates = true
-        popover.contentViewController = NSHostingController(rootView: popoverView)
+        popover.animates = false
+        popover.contentViewController = hostingController
+        syncPopoverSize()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
@@ -54,6 +61,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    private func syncPopoverSize() {
+        let targetSize = NSSize(width: 380, height: store.preferredPopoverHeight)
+        if popover.contentSize != targetSize {
+            popover.contentSize = targetSize
+        }
+        hostingController.view.frame = NSRect(origin: .zero, size: targetSize)
+    }
+
     private func bindStoreToStatusBar() {
         store.$enabledProviders
             .combineLatest(store.$statusByProvider, store.$quotasByProvider, store.$sessionsByProvider)
@@ -61,6 +76,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in
                 self?.updateStatusItemAppearance()
+                self?.syncPopoverSize()
+            }
+            .store(in: &cancellables)
+
+        store.$showingSettings
+            .combineLatest(store.$hasCompletedOnboarding)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in
+                self?.syncPopoverSize()
             }
             .store(in: &cancellables)
     }
@@ -72,6 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let result = NSMutableAttributedString()
         let tagFont = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
         let pctFont = NSFont.monospacedDigitSystemFont(ofSize: 12.0, weight: .medium)
+        let dotDiameter: CGFloat = 8.0
+        let dotYOffset = floor((pctFont.capHeight - dotDiameter) / 2.0)
         var tooltipParts: [String] = []
 
         for (index, provider) in store.enabledProviders.enumerated() {
@@ -99,8 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             )
 
             let attachment = NSTextAttachment()
-            attachment.image = makeStatusDotImage(color: status.nsColor)
-            attachment.bounds = NSRect(x: 0, y: -0.5, width: 8.5, height: 8.5)
+            attachment.image = makeStatusDotImage(color: status.nsColor, size: dotDiameter)
+            attachment.bounds = NSRect(x: 0, y: dotYOffset, width: dotDiameter, height: dotDiameter)
             result.append(NSAttributedString(attachment: attachment))
 
             let pctText = pct.map { " \($0)%" } ?? " --"
@@ -124,10 +150,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         button.toolTip = tooltipParts.joined(separator: "\n")
     }
 
-    private func makeStatusDotImage(color: NSColor) -> NSImage {
-        let size = NSSize(width: 9, height: 9)
+    private func makeStatusDotImage(color: NSColor, size dotSize: CGFloat) -> NSImage {
+        let size = NSSize(width: dotSize, height: dotSize)
         let image = NSImage(size: size, flipped: false) { rect in
-            let dotRect = rect.insetBy(dx: 0.75, dy: 0.75)
+            let dotRect = rect.insetBy(dx: 0.5, dy: 0.5)
             let path = NSBezierPath(ovalIn: dotRect)
             color.setFill()
             path.fill()
@@ -164,6 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func openPopover() {
         guard let button = statusItem.button else { return }
+        syncPopoverSize()
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
