@@ -2,8 +2,8 @@
 import argparse
 import datetime
 import json
-import math
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -26,6 +26,109 @@ from core import (
     set_launch_at_login,
 )
 from i18n import SUPPORTED_LANGUAGES, L10n
+
+
+PROVIDER_LOGO_PATHS = {
+    "antigravity": (
+        "M21.345 22.1123C22.6291 23.0755 24.5553 22.4335 22.7895 20.6677"
+        "C17.4927 15.5313 18.6162 1.4061 12.0352 1.4061C5.4541 1.4061 6.5777 15.5313 1.2808 20.6677"
+        "C-0.6454 22.5939 1.4413 23.0755 2.7254 22.1123C7.7013 18.7416 7.3803 12.8026 12.0352 12.8026"
+        "C16.69 12.8026 16.369 18.7416 21.345 22.1123Z"
+    ),
+    "codex": (
+        "M22.2819 9.8211C22.8248 8.1862 22.6369 6.3967 21.7662 4.9103"
+        "C20.4571 2.6316 17.826 1.4595 15.2564 2.0103C13.8083 0.3995 11.6112 -0.3168 9.492 0.1311"
+        "C7.3728 0.5789 5.6533 2.1229 4.9807 4.1818C3.2928 4.5279 1.836 5.5847 0.983 7.0818"
+        "C-0.3404 9.3568 -0.0401 12.2267 1.7257 14.1784C1.1808 15.8125 1.367 17.6022 2.2367 19.0891"
+        "C3.5475 21.3686 6.1803 22.5406 8.7513 21.9892C9.8948 23.277 11.5377 24.0097 13.2599 24"
+        "C15.8937 24.0024 18.2271 22.3021 19.0317 19.7942C20.7194 19.4475 22.176 18.3908 23.0294 16.8941"
+        "C24.3368 14.6231 24.0351 11.7688 22.2819 9.8212ZM13.2599 22.4292"
+        "C12.2086 22.4309 11.1903 22.0624 10.3835 21.3884L10.5254 21.308L15.3037 18.5498"
+        "C15.5456 18.4079 15.6949 18.149 15.6964 17.8685L15.6964 11.1316L17.7164 12.3002"
+        "C17.7367 12.3105 17.7508 12.3298 17.7544 12.3522L17.7544 17.9348"
+        "C17.7491 20.4148 15.7399 22.424 13.2599 22.4292ZM3.5992 18.3038"
+        "C3.072 17.3934 2.8827 16.3263 3.0646 15.2901L3.2066 15.3753L7.9896 18.1335"
+        "C8.2306 18.2749 8.5292 18.2749 8.7702 18.1335L14.613 14.765L14.613 17.0974"
+        "C14.6119 17.1219 14.5997 17.1445 14.5798 17.1589L9.74 19.9502"
+        "C7.5893 21.1891 4.8416 20.4525 3.5992 18.3038ZM2.3408 7.8956"
+        "C2.8717 6.9794 3.7096 6.2805 4.7063 5.9228L4.7063 11.6C4.7026 11.8793 4.8513 12.1386 5.0942 12.2765"
+        "L10.9086 15.6308L8.8885 16.7993C8.8663 16.8111 8.8397 16.8111 8.8175 16.7993L3.9872 14.0128"
+        "C1.8408 12.7686 1.1047 10.023 2.3408 7.872ZM18.9371 11.7514L13.1038 8.364L15.1192 7.2"
+        "C15.1414 7.1882 15.168 7.1882 15.1902 7.2L20.0205 9.9913"
+        "C21.5281 10.8612 22.3979 12.5234 22.2531 14.258C22.1083 15.9926 20.975 17.4876 19.344 18.0955"
+        "L19.344 12.4183C19.3355 12.1397 19.1808 11.8863 18.937 11.7513ZM20.9478 8.7283L20.8058 8.6431"
+        "L16.0323 5.8613C15.7898 5.719 15.4894 5.719 15.2469 5.8613L9.409 9.2297L9.409 6.8974"
+        "C9.4065 6.8732 9.4174 6.8496 9.4374 6.8359L14.2677 4.0493"
+        "C15.779 3.1787 17.6573 3.2599 19.0877 4.2578C20.5182 5.2556 21.2431 6.9903 20.9479 8.7093Z"
+        "M8.3065 12.863L6.2865 11.6992C6.266 11.6869 6.2521 11.6661 6.2485 11.6425L6.2485 6.0742"
+        "C6.2508 4.3304 7.2605 2.7449 8.8397 2.0054C10.419 1.2659 12.2833 1.5056 13.6242 2.6205"
+        "L13.4822 2.701L8.704 5.459C8.4621 5.6009 8.3128 5.8598 8.3113 6.1403ZM9.4041 10.4976"
+        "L12.0061 8.9978L14.613 10.4976L14.613 13.497L12.0156 14.9967L9.4089 13.497Z"
+    ),
+    "claude": (
+        "M4.7144 15.9555L9.4318 13.3084L9.5108 13.0777L9.4318 12.9502L9.2011 12.9502L8.4118 12.9016"
+        "L5.7162 12.8287L3.3787 12.7316L1.1141 12.6102L0.5434 12.4887L0.0091 11.7845L0.0637 11.4323"
+        "L0.5434 11.1105L1.2294 11.1713L2.7473 11.2745L5.024 11.4323L6.6754 11.5295L9.1222 11.7845"
+        "L9.5108 11.7845L9.5654 11.6266L9.4318 11.5295L9.3286 11.4323L6.973 9.8356L4.423 8.1477"
+        "L3.0874 7.1763L2.3649 6.6845L2.0006 6.2231L1.8428 5.2153L2.4985 4.4928L3.3788 4.5535"
+        "L3.6034 4.6142L4.4959 5.3002L6.4023 6.7756L8.8916 8.6092L9.2559 8.9127L9.4016 8.8095"
+        "L9.4198 8.7367L9.2558 8.4634L7.9019 6.0167L6.4569 3.5274L5.8134 2.4954L5.6434 1.876"
+        "C5.5827 1.621 5.5402 1.4086 5.5402 1.1475L6.287 0.1335L6.6997 0L7.6954 0.1336L8.1144 0.4978"
+        "L8.7336 1.9125L9.7354 4.1407L11.2897 7.1703L11.745 8.0688L11.9879 8.9006L12.0789 9.1556"
+        "L12.2368 9.1556L12.2368 9.0099L12.3643 7.3039L12.6011 5.2092L12.8318 2.5135L12.9107 1.7546"
+        "L13.2871 0.8439L14.0339 0.3521L14.6167 0.6314L15.0964 1.3174L15.0296 1.7607L14.7443 3.6124"
+        "L14.1857 6.5145L13.8214 8.4574L14.0339 8.4574L14.2768 8.2145L15.2603 6.9092L16.9117 4.8449"
+        "L17.6403 4.0253L18.4903 3.1207L19.0367 2.6896L20.0688 2.6896L20.8278 3.8189L20.4878 4.9846"
+        "L19.4253 6.3324L18.5449 7.4738L17.2821 9.1738L16.4928 10.5338L16.5657 10.6431L16.7539 10.6248"
+        "L19.6074 10.0178L21.1495 9.7384L22.9891 9.4227L23.8209 9.8113L23.9119 10.2059L23.5841 11.0134"
+        "L21.6171 11.4991L19.3099 11.9605L15.8735 12.7741L15.831 12.8045L15.8796 12.8652L17.4278 13.0109"
+        "L18.0896 13.0473L19.7106 13.0473L22.7281 13.272L23.5173 13.794L23.9909 14.4316L23.9119 14.9173"
+        "L22.6977 15.5366L21.0584 15.148L17.2334 14.2373L15.9221 13.9094L15.7399 13.9094L15.7399 14.0187"
+        "L16.8328 15.0873L18.8363 16.8965L21.3438 19.2279L21.4713 19.8047L21.1495 20.2601L20.8095 20.2115"
+        "L18.6056 18.554L17.7556 17.8072L15.831 16.1862L15.7035 16.1862L15.7035 16.3562L16.1467 17.0058"
+        "L18.4903 20.5272L18.6117 21.6079L18.4417 21.96L17.8346 22.1725L17.1667 22.0511L15.7946 20.1265"
+        "L14.38 17.959L13.2386 16.0162L13.0989 16.0952L12.4249 23.3504L12.1093 23.7207L11.3807 24"
+        "L10.7736 23.5386L10.4518 22.7918L10.7736 21.3165L11.1622 19.3919L11.4779 17.8619L11.7632 15.9615"
+        "L11.9332 15.3301L11.9211 15.2876L11.7814 15.3058L10.3486 17.273L8.169 20.2176L6.4447 22.0632"
+        "L6.0319 22.2272L5.3155 21.8568L5.3822 21.195L5.783 20.6061L8.169 17.5704L9.6079 15.6884"
+        "L10.5369 14.6016L10.5307 14.4437L10.4761 14.4437L4.1376 18.5601L3.0083 18.7058L2.5226 18.2504"
+        "L2.5834 17.5037L2.8141 17.2608L4.7205 15.9494Z"
+    ),
+}
+
+_SVG_TOKEN_RE = re.compile(r"[MLCZ]|[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")
+
+
+def parse_svg_path_commands(d_str):
+    """Parse an SVG path string containing absolute M/L/C/Z commands."""
+    tokens = _SVG_TOKEN_RE.findall(d_str or "")
+    commands = []
+    idx = 0
+    current_cmd = None
+    while idx < len(tokens):
+        tok = tokens[idx]
+        if tok in ("M", "L", "C", "Z"):
+            current_cmd = tok
+            idx += 1
+            if current_cmd == "Z":
+                commands.append(("Z", ()))
+                continue
+        if current_cmd == "M":
+            x, y = float(tokens[idx]), float(tokens[idx + 1])
+            commands.append(("M", (x, y)))
+            idx += 2
+            current_cmd = "L"
+        elif current_cmd == "L":
+            x, y = float(tokens[idx]), float(tokens[idx + 1])
+            commands.append(("L", (x, y)))
+            idx += 2
+        elif current_cmd == "C":
+            vals = tuple(float(tokens[idx + j]) for j in range(6))
+            commands.append(("C", vals))
+            idx += 6
+        else:
+            raise ValueError("Unsupported SVG path command: {!r}".format(tok))
+    return commands
 
 
 def no_window_kwargs():
@@ -69,7 +172,6 @@ def main_gui():
         QFileSystemWatcher,
         QObject,
         QPoint,
-        QPointF,
         QRect,
         Qt,
         QTimer,
@@ -123,6 +225,21 @@ def main_gui():
             return "#FF3B30"
         return "#34C759"
 
+    def build_provider_path(provider):
+        path = QPainterPath()
+        path.setFillRule(Qt.WindingFill)
+        d_str = PROVIDER_LOGO_PATHS.get(provider, "")
+        for cmd, args in parse_svg_path_commands(d_str):
+            if cmd == "M":
+                path.moveTo(args[0], args[1])
+            elif cmd == "L":
+                path.lineTo(args[0], args[1])
+            elif cmd == "C":
+                path.cubicTo(*args)
+            elif cmd == "Z":
+                path.closeSubpath()
+        return path
+
     def make_provider_logo_pixmap(provider, size, color_hex):
         dpr = 2.0
         px_size = int(round(size * dpr))
@@ -134,70 +251,9 @@ def main_gui():
         painter.setRenderHint(QPainter.Antialiasing, True)
         scale = size / 24.0
         painter.scale(scale, scale)
-        color = QColor(color_hex)
-
-        if provider == "antigravity":
-            path = QPainterPath()
-            path.moveTo(2.9, 20.3)
-            path.cubicTo(5.0, 13.8, 8.6, 2.3, 12.0, 2.3)
-            path.cubicTo(15.4, 2.3, 19.0, 13.8, 21.1, 20.3)
-            path.cubicTo(21.7, 21.7, 18.9, 22.1, 17.3, 20.8)
-            path.cubicTo(15.3, 17.2, 13.9, 11.4, 12.0, 11.4)
-            path.cubicTo(10.1, 11.4, 8.7, 17.2, 6.7, 20.8)
-            path.cubicTo(5.1, 22.1, 2.3, 21.7, 2.9, 20.3)
-            path.closeSubpath()
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(color)
-            painter.drawPath(path)
-        elif provider == "codex":
-            cx, cy = 12.0, 12.0
-            lobe_dist = 5.0
-            apothem = 2.55
-            lobe_r = 0.5 * lobe_dist + apothem
-            hex_r = apothem / (math.sqrt(3.0) / 2.0)
-
-            path = QPainterPath()
-            for k in range(6):
-                theta = k * (math.pi / 3.0) - (math.pi / 2.0)
-                lx = cx + lobe_dist * math.cos(theta)
-                ly = cy + lobe_dist * math.sin(theta)
-                v1_a = theta - (5.0 * math.pi / 6.0)
-                v2_a = theta + (math.pi / 2.0)
-                v_start = QPointF(cx + hex_r * math.cos(v1_a), cy + hex_r * math.sin(v1_a))
-                v_end = QPointF(cx + hex_r * math.cos(v2_a), cy + hex_r * math.sin(v2_a))
-
-                arc_start = theta - (2.0 * math.pi / 3.0)
-                t1 = QPointF(lx + lobe_r * math.cos(arc_start), ly + lobe_r * math.sin(arc_start))
-
-                path.moveTo(v_start)
-                path.lineTo(t1)
-                path.arcTo(
-                    lx - lobe_r,
-                    ly - lobe_r,
-                    2.0 * lobe_r,
-                    2.0 * lobe_r,
-                    -math.degrees(arc_start),
-                    -240.0,
-                )
-                path.lineTo(v_end)
-
-            painter.setPen(QPen(color, 1.55, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawPath(path)
-        else:
-            cx, cy = 12.0, 12.0
-            lengths = [10.4, 8.7, 10.1, 8.9, 10.5, 8.6, 10.2, 9.0, 10.4, 8.7, 9.9, 9.1]
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(color)
-            painter.drawEllipse(QPointF(cx, cy), 3.4, 3.4)
-            painter.setPen(QPen(color, 1.45, Qt.SolidLine, Qt.RoundCap))
-            step = (2.0 * math.pi) / 12.0
-            for idx, r_len in enumerate(lengths):
-                ang = idx * step - (math.pi / 2.0) + 0.08
-                tx = cx + (r_len - 0.7) * math.cos(ang)
-                ty = cy + (r_len - 0.7) * math.sin(ang)
-                painter.drawLine(QPointF(cx, cy), QPointF(tx, ty))
-
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(color_hex))
+        painter.drawPath(build_provider_path(provider))
         painter.end()
         return pixmap
 

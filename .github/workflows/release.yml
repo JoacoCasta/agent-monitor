@@ -24,7 +24,7 @@ jobs:
       - name: Build AgentMonitor.exe and portable ZIP
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onefile --name AgentMonitor --add-data "Scripts;Scripts" desktop/agent_monitor.py
+          pyinstaller --noconfirm --clean --windowed --onefile --name AgentMonitor --icon windows/icon.ico --add-data "Scripts;Scripts" desktop/agent_monitor.py
           New-Item -ItemType Directory -Force -Path dist/release-win/Scripts | Out-Null
           Copy-Item dist/AgentMonitor.exe dist/release-win/AgentMonitor.exe
           Copy-Item Scripts/*.py dist/release-win/Scripts/
@@ -65,23 +65,25 @@ jobs:
           mkdir -p dist/release-linux/Scripts
           cp dist/agent-monitor dist/release-linux/agent-monitor
           cp Scripts/*.py dist/release-linux/Scripts/
-          cp linux/install.sh linux/uninstall.sh dist/release-linux/
+          cp linux/install.sh linux/uninstall.sh linux/agent-monitor.png dist/release-linux/
           tar -czf AgentMonitor-Linux-x64.tar.gz -C dist/release-linux .
 
           TAG_VER="${GITHUB_REF_NAME#v}"
-          if [ -z "$TAG_VER" ] || [ "$TAG_VER" = "main" ]; then TAG_VER="2.1.0"; fi
+          if [ -z "$TAG_VER" ] || [ "$TAG_VER" = "main" ]; then TAG_VER="2.3.0"; fi
           DEB_VER="$(echo "$TAG_VER" | sed 's/[^0-9.].*//')"
-          if [ -z "$DEB_VER" ]; then DEB_VER="2.1.0"; fi
+          if [ -z "$DEB_VER" ]; then DEB_VER="2.3.0"; fi
 
-          mkdir -p dist/deb/DEBIAN dist/deb/usr/bin dist/deb/usr/share/applications
+          mkdir -p dist/deb/DEBIAN dist/deb/usr/bin dist/deb/usr/share/applications dist/deb/usr/share/icons/hicolor/256x256/apps
           cp dist/agent-monitor dist/deb/usr/bin/agent-monitor
           chmod 755 dist/deb/usr/bin/agent-monitor
+          cp linux/agent-monitor.png dist/deb/usr/share/icons/hicolor/256x256/apps/agent-monitor.png
           cat > dist/deb/usr/share/applications/agent-monitor.desktop <<'DESKTOP'
           [Desktop Entry]
           Type=Application
           Name=Agent Monitor
           Comment=System tray monitor for Antigravity, Codex, and Claude Code
           Exec=/usr/bin/agent-monitor
+          Icon=agent-monitor
           Terminal=false
           Categories=Development;Utility;
           StartupNotify=false
@@ -112,6 +114,7 @@ jobs:
           mkdir -p dist/release-mac/AgentMonitor.app/Contents/MacOS dist/release-mac/AgentMonitor.app/Contents/Resources/Scripts
           swiftc -swift-version 5 -O -framework AppKit -framework SwiftUI -framework UserNotifications -framework Combine Sources/*.swift -o dist/release-mac/AgentMonitor.app/Contents/MacOS/AgentMonitor
           cp Resources/Info.plist dist/release-mac/AgentMonitor.app/Contents/Info.plist
+          cp Resources/AppIcon.icns dist/release-mac/AgentMonitor.app/Contents/Resources/AppIcon.icns
           cp Scripts/*.py dist/release-mac/AgentMonitor.app/Contents/Resources/Scripts/
           chmod 755 dist/release-mac/AgentMonitor.app/Contents/Resources/Scripts/*.py
           codesign --force --deep --sign - dist/release-mac/AgentMonitor.app

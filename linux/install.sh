@@ -9,6 +9,7 @@ VENV_DIR="$MONITOR_DIR/venv"
 PREFS_FILE="$MONITOR_DIR/preferences.json"
 BIN_DIR="$HOME/.local/bin"
 APPS_DIR="$HOME/.local/share/applications"
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
 AUTOSTART_DIR="$HOME/.config/autostart"
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -25,13 +26,22 @@ fi
 # Stop any running instance
 pkill -f "agent_monitor.py" >/dev/null 2>&1 || true
 
-mkdir -p "$MONITOR_DIR" "$DESKTOP_DIR" "$BIN_DIR" "$APPS_DIR" "$AUTOSTART_DIR"
+mkdir -p "$MONITOR_DIR" "$DESKTOP_DIR" "$BIN_DIR" "$APPS_DIR" "$ICON_DIR" "$AUTOSTART_DIR"
 
 # 1. Stage shared scripts & desktop UI
 cp "$REPO_ROOT"/Scripts/*.py "$MONITOR_DIR/"
 cp "$REPO_ROOT"/desktop/*.py "$DESKTOP_DIR/"
 cp "$REPO_ROOT/desktop/requirements.txt" "$DESKTOP_DIR/requirements.txt"
 chmod 755 "$MONITOR_DIR"/*.py "$DESKTOP_DIR"/*.py
+
+if [ -f "$SCRIPT_DIR/agent-monitor.png" ]; then
+    cp "$SCRIPT_DIR/agent-monitor.png" "$ICON_DIR/agent-monitor.png"
+elif [ -f "$REPO_ROOT/linux/agent-monitor.png" ]; then
+    cp "$REPO_ROOT/linux/agent-monitor.png" "$ICON_DIR/agent-monitor.png"
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+fi
 
 # 2. Create/update venv with PySide6
 if [ ! -x "$VENV_DIR/bin/python" ]; then
@@ -73,6 +83,7 @@ Type=Application
 Name=Agent Monitor
 Comment=System tray monitor for Antigravity, Codex, and Claude Code
 Exec=$BIN_DIR/agent-monitor
+Icon=agent-monitor
 Terminal=false
 Categories=Development;Utility;
 StartupNotify=false

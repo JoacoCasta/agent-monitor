@@ -282,7 +282,7 @@ struct PopoverView: View {
                             HStack(spacing: 10) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
-                                        ProviderLogoView(provider: provider, size: 13.5)
+                                        ProviderLogoView(provider: provider, size: 14)
                                             .foregroundStyle(.primary)
                                         Text(provider.displayName)
                                             .font(.system(size: 12.5, weight: .semibold))
@@ -521,7 +521,7 @@ private struct ProviderCardView: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        ProviderLogoView(provider: provider, size: 13)
+                        ProviderLogoView(provider: provider, size: 14)
                             .foregroundStyle(.primary)
                         Text(provider.displayName)
                             .font(.system(size: 12.5, weight: .semibold))

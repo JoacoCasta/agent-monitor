@@ -1,20 +1,25 @@
 import datetime
 import json
 import os
+import py_compile
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import xml.etree.ElementTree as ET
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "Scripts")
 DESKTOP_DIR = os.path.join(REPO_ROOT, "desktop")
+LOGOS_DIR = os.path.join(REPO_ROOT, "assets", "logos")
 
 if DESKTOP_DIR not in sys.path:
     sys.path.insert(0, DESKTOP_DIR)
 
-from core import MonitorCore
+import agent_monitor
+from core import MonitorCore, PROVIDERS
 from i18n import L10n, SUPPORTED_LANGUAGES
 
 
@@ -267,6 +272,83 @@ class CrossPlatformTests(unittest.TestCase):
         self.assertIn("providers", js)
         self.assertEqual(js["providers"]["antigravity"]["status"], "waiting")
         self.assertEqual(js["providers"]["antigravity"]["activeSessions"], 2)
+
+    def test_official_svg_logos_and_desktop_helpers(self):
+        self.assertEqual(set(agent_monitor.PROVIDER_LOGO_PATHS.keys()), set(PROVIDERS))
+
+        for prov in PROVIDERS:
+            svg_path = os.path.join(LOGOS_DIR, "{}.svg".format(prov))
+            self.assertTrue(os.path.isfile(svg_path), "Missing SVG: {}".format(svg_path))
+
+            tree = ET.parse(svg_path)
+            root = tree.getroot()
+            self.assertTrue(root.tag.endswith("svg"), "Unexpected root tag: {}".format(root.tag))
+            self.assertEqual(root.attrib.get("viewBox"), "0 0 24 24")
+            self.assertEqual(root.attrib.get("fill"), "currentColor")
+
+            paths = [elem for elem in root.iter() if elem.tag.endswith("path")]
+            self.assertGreaterEqual(len(paths), 1, "No <path> found in {}".format(svg_path))
+            d_attr = paths[0].attrib.get("d", "").strip()
+            self.assertTrue(d_attr, "Empty <path d> in {}".format(svg_path))
+
+            # Desktop helper must match official SVG path 1:1
+            self.assertEqual(agent_monitor.PROVIDER_LOGO_PATHS[prov], d_attr)
+            cmds = agent_monitor.parse_svg_path_commands(d_attr)
+            self.assertGreater(len(cmds), 2)
+            self.assertEqual(cmds[0][0], "M")
+            self.assertEqual(cmds[-1][0], "Z")
+
+        # Verify parser handles implicit L after M and repeated C segments, and rejects invalid commands
+        parsed = agent_monitor.parse_svg_path_commands("M0 0 1 2 C1 1 2 2 3 3 4 4 5 5 6 6 Z")
+        self.assertEqual([c[0] for c in parsed], ["M", "L", "C", "C", "Z"])
+        with self.assertRaises(ValueError):
+            agent_monitor.parse_svg_path_commands("A 1 1 0 0 1 2 2")
+
+    def test_desktop_syntax_status_json_and_packaging_icons(self):
+        for fname in ("agent_monitor.py", "core.py", "i18n.py"):
+            py_compile.compile(os.path.join(DESKTOP_DIR, fname), doraise=True)
+
+        # Verify --status-json preserves short_tag backwards compatibility
+        proc = subprocess.run(
+            [sys.executable, os.path.join(DESKTOP_DIR, "agent_monitor.py"), "--status-json"],
+            text=True,
+            capture_output=True,
+            env=self.env,
+            timeout=15,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        status_payload = json.loads(proc.stdout)
+        self.assertEqual(status_payload["providers"]["antigravity"]["tag"], "AG")
+        self.assertEqual(status_payload["providers"]["codex"]["tag"], "CX")
+        self.assertEqual(status_payload["providers"]["claude"]["tag"], "CC")
+
+        # Verify cross-platform app icons and installer configs
+        linux_png = os.path.join(REPO_ROOT, "linux", "agent-monitor.png")
+        self.assertTrue(os.path.isfile(linux_png))
+        with open(linux_png, "rb") as f:
+            header = f.read(24)
+        self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
+        width, height = struct.unpack(">II", header[16:24])
+        self.assertEqual((width, height), (256, 256))
+
+        win_ico = os.path.join(REPO_ROOT, "windows", "icon.ico")
+        self.assertTrue(os.path.isfile(win_ico))
+        with open(win_ico, "rb") as f:
+            ico_hdr = f.read(6)
+        reserved, ico_type, count = struct.unpack("<HHH", ico_hdr)
+        self.assertEqual((reserved, ico_type), (0, 1))
+        self.assertGreaterEqual(count, 4)
+
+        with open(os.path.join(REPO_ROOT, "windows", "installer.iss"), "r", encoding="utf-8") as f:
+            iss = f.read()
+        self.assertIn("AppVersion=2.3.0", iss)
+        self.assertIn("SetupIconFile=icon.ico", iss)
+
+        with open(os.path.join(REPO_ROOT, "linux", "install.sh"), "r", encoding="utf-8") as f:
+            sh = f.read()
+        self.assertIn("hicolor/256x256/apps", sh)
+        self.assertIn("agent-monitor.png", sh)
+        self.assertIn("Icon=agent-monitor", sh)
 
 
 if __name__ == "__main__":

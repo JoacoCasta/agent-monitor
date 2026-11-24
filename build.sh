@@ -29,6 +29,7 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$BUNDLED_SCRIPTS_DIR"
     -o "$MACOS_DIR/AgentMonitor"
 
 cp "$SCRIPT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
+cp "$SCRIPT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 cp "$SCRIPT_DIR"/Scripts/*.py "$BUNDLED_SCRIPTS_DIR/"
 chmod 755 "$BUNDLED_SCRIPTS_DIR"/*.py
 

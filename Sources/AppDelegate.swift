@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         syncPopoverSize()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.autosaveName = "AgentMonitorStatusItem"
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(handleStatusItemClick(_:))
@@ -103,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let t = store.l10n
         let result = NSMutableAttributedString()
         let pctFont = NSFont.monospacedDigitSystemFont(ofSize: 12.0, weight: .medium)
-        let logoSize: CGFloat = 13.5
+        let logoSize: CGFloat = 14.0
         let logoYOffset = round((pctFont.capHeight - logoSize) / 2.0)
         let dotDiameter: CGFloat = 8.0
         let dotYOffset = floor((pctFont.capHeight - dotDiameter) / 2.0)

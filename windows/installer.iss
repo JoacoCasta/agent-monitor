@@ -1,7 +1,7 @@
 [Setup]
 AppId={{8D6B2A1E-9C4F-4E31-B8B1-52F0F1C7E201}
 AppName=Agent Monitor
-AppVersion=2.2.0
+AppVersion=2.3.0
 AppPublisher=Agent Monitor Contributors
 AppPublisherURL=https://github.com/JoacoCasta/agent-monitor
 DefaultDirName={localappdata}\Programs\Agent Monitor
@@ -12,6 +12,7 @@ OutputBaseFilename=AgentMonitor-Windows-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\AgentMonitor.exe
 
 [Tasks]
