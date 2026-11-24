@@ -7,13 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  test-and-build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    runs-on: ${{ matrix.os }}
+  build-and-test:
+    runs-on: macos-latest
 
     steps:
       - name: Checkout repository
@@ -24,38 +19,37 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Compile Python sources
+      - name: Compile Python helper scripts
         run: |
-          python -m py_compile Scripts/hook-handler.py Scripts/fetch-quota.py Scripts/claude-statusline.py Scripts/configure-hooks.py desktop/i18n.py desktop/core.py desktop/agent_monitor.py tests/test_cross_platform.py
+          python3 -m py_compile Scripts/*.py
 
-      - name: Run cross-platform unit tests
+      - name: Run macOS unit tests
         run: |
-          python -m unittest discover -s tests -v
+          python3 -m unittest discover -s tests -v
 
-      - name: Verify desktop tray dependencies and CLI status output (Linux & Windows)
-        if: runner.os != 'macOS'
+      - name: Validate shell scripts
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r desktop/requirements.txt
-          python desktop/agent_monitor.py --status-json
+          bash -n build.sh install.sh uninstall.sh
 
-      - name: Verify Linux PySide6 GUI import
-        if: runner.os == 'Linux'
+      - name: Enforce no @State or @Observable in Sources
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0
-          QT_QPA_PLATFORM=offscreen python -c "import PySide6.QtWidgets, desktop.agent_monitor; print('PYSIDE6_LINUX_OK')"
+          if grep -rnE '@State\b|@Observable\b' Sources/*.swift; then
+            echo "Error: @State and @Observable macros are not supported by CommandLineTools swiftc builds."
+            exit 1
+          fi
 
-      - name: Verify Windows PySide6 GUI import
-        if: runner.os == 'Windows'
+      - name: Build Universal (arm64 + x86_64) macOS app bundle
         run: |
-          python -c "import PySide6.QtWidgets, desktop.agent_monitor; print('PYSIDE6_WINDOWS_OK')"
-
-      - name: Build macOS Swift app bundle
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p build/AgentMonitor.app/Contents/MacOS build/AgentMonitor.app/Contents/Resources
-          swiftc -swift-version 5 -O -framework AppKit -framework SwiftUI -framework UserNotifications -framework Combine Sources/*.swift -o build/AgentMonitor.app/Contents/MacOS/AgentMonitor
+          mkdir -p build/AgentMonitor.app/Contents/MacOS build/AgentMonitor.app/Contents/Resources/Scripts
+          swiftc -swift-version 5 -O -target arm64-apple-macosx14.0 -framework AppKit -framework SwiftUI -framework UserNotifications -framework Combine Sources/*.swift -o build/AgentMonitor-arm64
+          swiftc -swift-version 5 -O -target x86_64-apple-macosx14.0 -framework AppKit -framework SwiftUI -framework UserNotifications -framework Combine Sources/*.swift -o build/AgentMonitor-x86_64
+          lipo -create build/AgentMonitor-arm64 build/AgentMonitor-x86_64 -output build/AgentMonitor.app/Contents/MacOS/AgentMonitor
+          lipo -info build/AgentMonitor.app/Contents/MacOS/AgentMonitor
+          lipo -info build/AgentMonitor.app/Contents/MacOS/AgentMonitor | grep -q "arm64"
+          lipo -info build/AgentMonitor.app/Contents/MacOS/AgentMonitor | grep -q "x86_64"
           cp Resources/Info.plist build/AgentMonitor.app/Contents/Info.plist
+          cp Resources/AppIcon.icns build/AgentMonitor.app/Contents/Resources/AppIcon.icns
+          cp Scripts/*.py build/AgentMonitor.app/Contents/Resources/Scripts/
+          chmod 755 build/AgentMonitor.app/Contents/Resources/Scripts/*.py
           codesign --force --deep --sign - build/AgentMonitor.app
           codesign --verify --deep --strict build/AgentMonitor.app

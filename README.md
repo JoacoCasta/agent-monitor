@@ -2,12 +2,13 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/JoacoCasta/agent-monitor)](https://github.com/JoacoCasta/agent-monitor/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/JoacoCasta/agent-monitor/ci.yml?branch=main&label=CI)](https://github.com/JoacoCasta/agent-monitor/actions/workflows/ci.yml)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)](https://github.com/JoacoCasta/agent-monitor/releases/latest)
+[![macOS 14+ Universal](https://img.shields.io/badge/macOS-14%2B%20Universal%20(Apple%20Silicon%20%26%20Intel)-blue)](https://github.com/JoacoCasta/agent-monitor/releases/latest)
+[![SwiftUI + AppKit](https://img.shields.io/badge/built%20with-SwiftUI%20%2B%20AppKit-orange)](Sources/)
 [![License: MIT](https://img.shields.io/github/license/JoacoCasta/agent-monitor)](LICENSE)
 
 [Español](README.es.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
-A lightweight, native system-tray / menu-bar monitor for **macOS**, **Windows**, and **Linux** to track live agent status and remaining quotas across **Google Antigravity**, **ChatGPT (Codex)**, and **Claude Code**.
+A lightweight, native **macOS Menu Bar** app (Universal binary for **Apple Silicon & Intel**, macOS 14+) to track live agent status and remaining quotas across **Google Antigravity**, **ChatGPT (Codex)**, and **Claude Code**.
 
 ## Screenshots
 
@@ -19,41 +20,37 @@ A lightweight, native system-tray / menu-bar monitor for **macOS**, **Windows**,
 
 ## Download (No Terminal Required)
 
-Download the latest ready-to-run installer for your OS from [GitHub Releases](https://github.com/JoacoCasta/agent-monitor/releases/latest):
+Download the latest Universal macOS build (`arm64` + `x86_64`) from [GitHub Releases](https://github.com/JoacoCasta/agent-monitor/releases/latest):
 
-- **macOS (`AgentMonitor-macOS.dmg`)**: Open the `.dmg`, drag **Agent Monitor** to **Applications**, and launch it.
-  - *First launch on macOS*: Because this open-source app is not Apple-notarized yet, if macOS shows an "unidentified developer" notice, **Right-click (or Control-click) `AgentMonitor.app` → Open** once.
-- **Windows (`AgentMonitor-Windows-Setup.exe`)**: Double-click to install (no admin rights required) and launch directly into your system tray. A portable `AgentMonitor-Windows-Portable.zip` is also available.
-- **Linux (`AgentMonitor-Linux-x64.deb` / `AgentMonitor-Linux-x64.tar.gz`)**: Install the `.deb` via Software Center / `sudo apt install ./AgentMonitor-Linux-x64.deb`, or extract the `.tar.gz` and run `./agent-monitor`.
+- **DMG Installer (`AgentMonitor-macOS.dmg`)**: Open the `.dmg`, drag **Agent Monitor** to **Applications**, and launch it.
+- **ZIP Archive (`AgentMonitor-macOS.zip`)**: Unzip and move `AgentMonitor.app` to **Applications**.
+- *First launch on macOS*: Because this open-source app is not Apple-notarized yet, if macOS shows an "unidentified developer" notice, **Right-click (or Control-click) `AgentMonitor.app` → Open** once.
 
-All apps are **self-contained**: on first launch they automatically stage helper scripts, show an agent chooser, let you toggle **Start at login** inside **Settings**, and configure hooks safely with zero terminal setup.
+`AgentMonitor.app` is **self-contained**: on first launch it stages its bundled helper scripts, shows an initial agent chooser, lets you toggle **Start at login** in **Settings**, and configures provider hooks safely with zero terminal setup.
 
 ## Features
 
-- **Official agent logos & compact tray / menu-bar indicator**:
-  - **macOS (SwiftUI + AppKit)**: Renders each enabled agent's official monochrome vector logo alongside a live traffic-light dot and its lowest remaining quota percentage, adapting cleanly to dark and light menu bars.
-  - **Windows & Linux (Python + PySide6 / Qt6)**: Dynamic multi-dot tray icon reflecting each selected agent's live status, low-quota alert badge (`< 20%`), hover summary tooltip, and interactive popup panel with official vector provider logos.
+- **Native Retina Menu Bar indicator**: Renders each enabled agent's official monochrome vector logo at crisp 2x Retina resolution alongside a live traffic-light dot and lowest remaining quota percentage, automatically adapting between dark and light macOS Menu Bars with near-zero (`~0.0%`) idle CPU usage.
 - **Live traffic-light state**:
   - **Yellow**: Agent is blocked waiting for explicit user input (questions, permissions, elicitation, or plan approval).
   - **Red**: Agent is actively thinking, running tools, or executing background tasks.
   - **Green**: Agent is idle.
 - **Multi-window quota tracking**: Shows 5-hour rolling windows, weekly/monthly limits, color-coded progress bars, low-quota warnings (`< 20%`), and live reset countdowns.
 - **Provider selection & safe hook management**: Pick which agents to monitor on first launch or anytime in **Settings**. Enabling or disabling a provider safely merges or removes only its monitor hooks while preserving existing configs (including Codex `notify` and any pre-existing Claude Code `statusLine`).
-- **Native desktop notifications**: Alerts when an agent waits for your input or when any quota drops below `20%`. Clicking a notification focuses that agent's app.
-- **7 built-in languages**: Automatic OS language detection plus manual switcher for **English**, **Español**, **Português**, **Français**, **Deutsch**, **简体中文**, and **日本語**.
-- **Scriptable `--status-json` output**: Exposes each enabled provider's `tag` (`AG`, `CX`, `CC`), live status, percentage, active session count, and quota windows for Waybar, Polybar, or custom scripts.
+- **Native macOS notifications**: Alerts via `UserNotifications` when an agent waits for your input or when any quota drops below `20%`. Clicking a notification brings that agent's app to focus.
+- **7 built-in languages**: Automatic macOS language detection plus manual switcher for **English**, **Español**, **Português**, **Français**, **Deutsch**, **简体中文**, and **日本語**.
 
 ## Supported Providers
 
-| Provider | Logo & `--status-json` Tag | Quota Source | Live Status Source |
+| Provider | Official Logo | Quota Source | Live Status Source |
 | :--- | :--- | :--- | :--- |
-| **Google Antigravity** | Official Antigravity mark (`AG`) | `agy` CLI `statusLine` (`gemini` & `3p` 5h/weekly) | `~/.gemini/config/hooks.json` |
-| **ChatGPT (Codex)** | Official OpenAI mark (`CX`) | `codex app-server` JSON-RPC (`account/rateLimits/read`) | `~/.codex/hooks.json` |
-| **Claude Code** | Official Claude mark (`CC`) | `~/.claude/settings.json` `statusLine` (`rate_limits`) | `~/.claude/settings.json` hooks |
+| **Google Antigravity** | Antigravity mark | `agy` CLI `statusLine` (`gemini` & `3p` 5h/weekly) | `~/.gemini/config/hooks.json` |
+| **ChatGPT (Codex)** | OpenAI mark | `codex app-server` JSON-RPC (`account/rateLimits/read`) | `~/.codex/hooks.json` |
+| **Claude Code** | Claude mark | `~/.claude/settings.json` `statusLine` (`rate_limits`) | `~/.claude/settings.json` hooks |
 
 ## Build / Install from Source (Optional)
 
-### macOS (14.0+, Xcode Command Line Tools)
+Requires **macOS 14.0+** and **Xcode Command Line Tools** (`xcode-select --install`; full Xcode is not required):
 
 ```bash
 git clone https://github.com/JoacoCasta/agent-monitor.git
@@ -61,29 +58,9 @@ cd agent-monitor
 ./install.sh
 ```
 
+`./install.sh` builds `/Applications/AgentMonitor.app`, stages helper scripts under `~/.gemini/agent-monitor/`, syncs enabled provider hooks, and installs/starts the LaunchAgent (`com.agentmonitor.app`).
+
 **Uninstall:** `./uninstall.sh`
-
-### Windows (10/11, Python 3.9+)
-
-```powershell
-git clone https://github.com/JoacoCasta/agent-monitor.git
-cd agent-monitor
-powershell -ExecutionPolicy Bypass -File .\windows\install.ps1
-```
-
-**Uninstall:** `powershell -ExecutionPolicy Bypass -File .\windows\uninstall.ps1`
-
-### Linux (X11 / Wayland, Python 3.9+)
-
-```bash
-git clone https://github.com/JoacoCasta/agent-monitor.git
-cd agent-monitor
-./linux/install.sh
-```
-
-- **Waybar / Polybar / scripts**: Run `agent-monitor --status-json` to get live JSON with each enabled provider's `tag` (`AG`, `CX`, `CC`), status, percentage, and quota windows.
-
-**Uninstall:** `./linux/uninstall.sh`
 
 ## FAQ & Troubleshooting
 
@@ -93,8 +70,8 @@ cd agent-monitor
   Run `/hooks` once inside Codex CLI to trust the newly added Agent Monitor hooks. Existing `notify` hooks are preserved.
 - **Claude Code already uses a custom `statusLine`**:
   Agent Monitor automatically wraps and chains your previous `statusLine` command so both continue working, and restores your original command cleanly if you disable Claude Code or uninstall. Quota updates (`five_hour` and `seven_day`) appear during active Claude Code sessions.
-- **Linux GNOME doesn't show the system tray icon**:
-  Enable the **AppIndicator and KStatusNotifierItem Support** GNOME Shell extension so Qt/StatusNotifier tray icons appear in the top bar.
+- **Menu Bar item is hidden behind the MacBook notch**:
+  Hold `⌘` (Command) and drag the Agent Monitor menu bar item closer to the right side, or hide unused menu bar icons.
 
 ## Privacy & Official Interfaces Only
 

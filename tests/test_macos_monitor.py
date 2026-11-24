@@ -1,29 +1,24 @@
-import datetime
+import glob
 import json
 import os
+import plistlib
 import py_compile
-import struct
+import re
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 import xml.etree.ElementTree as ET
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "Scripts")
-DESKTOP_DIR = os.path.join(REPO_ROOT, "desktop")
+SOURCES_DIR = os.path.join(REPO_ROOT, "Sources")
+RESOURCES_DIR = os.path.join(REPO_ROOT, "Resources")
 LOGOS_DIR = os.path.join(REPO_ROOT, "assets", "logos")
-
-if DESKTOP_DIR not in sys.path:
-    sys.path.insert(0, DESKTOP_DIR)
-
-import agent_monitor
-from core import MonitorCore, PROVIDERS
-from i18n import L10n, SUPPORTED_LANGUAGES
+PROVIDERS = ("antigravity", "codex", "claude")
 
 
-class CrossPlatformTests(unittest.TestCase):
+class MacOSMonitorTests(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.fake_home = self.tmp_dir.name
@@ -47,8 +42,12 @@ class CrossPlatformTests(unittest.TestCase):
             timeout=15,
         )
 
-    def test_hook_handler_all_providers_and_windows_paths(self):
-        # Antigravity PreToolUse -> allow contract + Windows path normalization
+    def test_scripts_compile_cleanly(self):
+        for py_path in sorted(glob.glob(os.path.join(SCRIPTS_DIR, "*.py"))):
+            py_compile.compile(py_path, doraise=True)
+
+    def test_hook_handler_all_providers(self):
+        # Antigravity PreToolUse -> allow contract
         r1 = self._run_script(
             "hook-handler.py",
             ["antigravity", "PreToolUse"],
@@ -57,7 +56,7 @@ class CrossPlatformTests(unittest.TestCase):
                     "hookEventName": "PreToolUse",
                     "conversationId": "ag-1",
                     "modelName": "gemini-4-neon-xhigh",
-                    "workspacePaths": ["C:\\Users\\Dev\\my-app"],
+                    "workspacePaths": ["/Users/dev/projects/my-app"],
                     "toolCall": {"name": "run_command", "args": {}},
                 }
             ),
@@ -65,7 +64,7 @@ class CrossPlatformTests(unittest.TestCase):
         self.assertEqual(r1.returncode, 0, r1.stderr)
         self.assertEqual(json.loads(r1.stdout), {"decision": "allow"})
 
-        # Codex AskUserQuestion -> waiting + root drive ignored
+        # Codex AskUserQuestion -> waiting state
         r2 = self._run_script(
             "hook-handler.py",
             ["codex", "PreToolUse"],
@@ -74,7 +73,7 @@ class CrossPlatformTests(unittest.TestCase):
                     "hook_event_name": "PreToolUse",
                     "session_id": "cx-1",
                     "model": "gpt-6-luna",
-                    "cwd": "C:\\",
+                    "cwd": "/",
                     "tool_name": "AskUserQuestion",
                     "tool_input": {},
                 }
@@ -92,7 +91,7 @@ class CrossPlatformTests(unittest.TestCase):
                     "hook_event_name": "Notification",
                     "session_id": "cc-1",
                     "notification_type": "idle_prompt",
-                    "cwd": "/home/dev/proj-cc",
+                    "cwd": "/Users/dev/proj-cc",
                 }
             ),
         )
@@ -106,7 +105,7 @@ class CrossPlatformTests(unittest.TestCase):
                     "hook_event_name": "Notification",
                     "session_id": "cc-1",
                     "notification_type": "permission_prompt",
-                    "cwd": "/home/dev/proj-cc",
+                    "cwd": "/Users/dev/proj-cc",
                 }
             ),
         )
@@ -136,7 +135,6 @@ class CrossPlatformTests(unittest.TestCase):
         self.assertEqual(cc["detailKey"], "waiting_permission")
 
     def test_claude_statusline_and_configure_hooks_roundtrip(self):
-        # Pre-seed user configs
         os.makedirs(os.path.join(self.fake_home, ".gemini", "config"), exist_ok=True)
         with open(os.path.join(self.fake_home, ".gemini", "config", "hooks.json"), "w", encoding="utf-8") as f:
             json.dump({"custom-user-hook": {"enabled": True, "Stop": []}}, f)
@@ -195,86 +193,9 @@ class CrossPlatformTests(unittest.TestCase):
         self.assertIn("custom-user-hook", ag)
         self.assertNotIn("agent-monitor", ag)
 
-    def test_i18n_all_seven_languages(self):
-        now_dt = datetime.datetime(2026, 11, 24, 15, 0, 0, tzinfo=datetime.timezone.utc)
-        future_dt = now_dt + datetime.timedelta(hours=3, minutes=25)
-        for lang in SUPPORTED_LANGUAGES:
-            t = L10n(lang)
-            for st in ("waiting", "active", "idle"):
-                self.assertTrue(t.status_title(st))
-            self.assertTrue(t.choose_agents_title)
-            self.assertTrue(t.settings_title)
-            self.assertTrue(t.launch_at_login)
-            self.assertTrue(t.session_detail("running_tool", "Bash", "Running Bash"))
-            self.assertTrue(t.bucket_label({"windowKind": "5h"}))
-            self.assertTrue(t.bucket_label({"windowKind": "weekly"}))
-            self.assertTrue(t.bucket_label({"windowKind": "monthly"}))
-            cd = t.format_countdown(future_dt, 0, now_dt, now_dt)
-            self.assertTrue(cd)
-            self.assertTrue(t.resets_in_text(cd))
-            self.assertTrue(t.format_reset_clock(future_dt, is_weekly=True))
-            self.assertTrue(t.format_elapsed(1000, 1120))
-
-    def test_monitor_core_priority_and_status_json(self):
-        mon_dir = os.path.join(self.fake_home, ".gemini", "agent-monitor")
-        os.makedirs(mon_dir, exist_ok=True)
-        now = time.time()
-        with open(os.path.join(mon_dir, "state.json"), "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "updatedAt": now,
-                    "sessions": {
-                        "antigravity:1": {
-                            "id": "antigravity:1",
-                            "provider": "antigravity",
-                            "sessionId": "1",
-                            "status": "active",
-                            "detail": "Thinking...",
-                            "detailKey": "thinking",
-                            "detailArg": "",
-                            "waitingReason": "",
-                            "pendingFeedback": False,
-                            "modelName": "claude-opus-5-5-high",
-                            "workspace": "proj",
-                            "updatedAt": now,
-                            "statusChangedAt": now,
-                        },
-                        "antigravity:2": {
-                            "id": "antigravity:2",
-                            "provider": "antigravity",
-                            "sessionId": "2",
-                            "status": "waiting",
-                            "detail": "Waiting for answer",
-                            "detailKey": "waiting_question",
-                            "detailArg": "",
-                            "waitingReason": "question",
-                            "pendingFeedback": False,
-                            "modelName": "gemini-4-neon-high",
-                            "workspace": "proj2",
-                            "updatedAt": now - 5,
-                            "statusChangedAt": now - 5,
-                        },
-                    },
-                },
-                f,
-            )
-
-        core = MonitorCore(mon_dir)
-        # Runtime scripts should be auto-installed into monitor_dir
-        self.assertTrue(os.path.isfile(os.path.join(mon_dir, "hook-handler.py")))
-        self.assertTrue(os.path.isfile(os.path.join(mon_dir, "configure-hooks.py")))
-        # Yellow > Red priority
-        self.assertEqual(core.status_by_provider["antigravity"], "waiting")
-        # Prioritized waiting session uses Gemini model
-        self.assertEqual(core.active_antigravity_group_key(now), "gemini")
-
-        js = core.build_status_json(now)
-        self.assertIn("providers", js)
-        self.assertEqual(js["providers"]["antigravity"]["status"], "waiting")
-        self.assertEqual(js["providers"]["antigravity"]["activeSessions"], 2)
-
-    def test_official_svg_logos_and_desktop_helpers(self):
-        self.assertEqual(set(agent_monitor.PROVIDER_LOGO_PATHS.keys()), set(PROVIDERS))
+    def test_official_svg_logos_match_swift_paths_1_to_1(self):
+        with open(os.path.join(SOURCES_DIR, "ProviderLogo.swift"), "r", encoding="utf-8") as f:
+            swift_src = f.read()
 
         for prov in PROVIDERS:
             svg_path = os.path.join(LOGOS_DIR, "{}.svg".format(prov))
@@ -291,68 +212,46 @@ class CrossPlatformTests(unittest.TestCase):
             d_attr = paths[0].attrib.get("d", "").strip()
             self.assertTrue(d_attr, "Empty <path d> in {}".format(svg_path))
 
-            # Desktop helper must match official SVG path 1:1
-            self.assertEqual(agent_monitor.PROVIDER_LOGO_PATHS[prov], d_attr)
-            cmds = agent_monitor.parse_svg_path_commands(d_attr)
-            self.assertGreater(len(cmds), 2)
-            self.assertEqual(cmds[0][0], "M")
-            self.assertEqual(cmds[-1][0], "Z")
+            m = re.search(rf'private static let {prov}SVGPath = "([^"]+)"', swift_src)
+            self.assertIsNotNone(m, "Missing {}SVGPath in ProviderLogo.swift".format(prov))
+            self.assertEqual(m.group(1), d_attr, "Swift path differs from {}.svg".format(prov))
 
-        # Verify parser handles implicit L after M and repeated C segments, and rejects invalid commands
-        parsed = agent_monitor.parse_svg_path_commands("M0 0 1 2 C1 1 2 2 3 3 4 4 5 5 6 6 Z")
-        self.assertEqual([c[0] for c in parsed], ["M", "L", "C", "C", "Z"])
-        with self.assertRaises(ValueError):
-            agent_monitor.parse_svg_path_commands("A 1 1 0 0 1 2 2")
+    def test_retina_bitmap_ctm_ordering(self):
+        for fname in ("ProviderLogo.swift", "AppDelegate.swift"):
+            with open(os.path.join(SOURCES_DIR, fname), "r", encoding="utf-8") as f:
+                src = f.read()
+            pos_size = src.find("rep.size = NSSize(")
+            pos_ctx = src.find("NSGraphicsContext(bitmapImageRep: rep)")
+            self.assertGreater(pos_size, -1, "Missing rep.size assignment in {}".format(fname))
+            self.assertGreater(pos_ctx, -1, "Missing NSGraphicsContext(bitmapImageRep: rep) in {}".format(fname))
+            self.assertLess(
+                pos_size,
+                pos_ctx,
+                "rep.size must be set BEFORE NSGraphicsContext(bitmapImageRep: rep) in {}".format(fname),
+            )
 
-    def test_desktop_syntax_status_json_and_packaging_icons(self):
-        for fname in ("agent_monitor.py", "core.py", "i18n.py"):
-            py_compile.compile(os.path.join(DESKTOP_DIR, fname), doraise=True)
+    def test_info_plist_and_app_icon_and_swift_constraints(self):
+        plist_path = os.path.join(RESOURCES_DIR, "Info.plist")
+        with open(plist_path, "rb") as f:
+            plist = plistlib.load(f)
+        self.assertEqual(plist.get("CFBundleShortVersionString"), "3.0.0")
+        self.assertEqual(plist.get("CFBundleIconFile"), "AppIcon")
+        self.assertIs(plist.get("LSUIElement"), True)
 
-        # Verify --status-json preserves short_tag backwards compatibility
-        proc = subprocess.run(
-            [sys.executable, os.path.join(DESKTOP_DIR, "agent_monitor.py"), "--status-json"],
-            text=True,
-            capture_output=True,
-            env=self.env,
-            timeout=15,
-        )
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        status_payload = json.loads(proc.stdout)
-        self.assertEqual(status_payload["providers"]["antigravity"]["tag"], "AG")
-        self.assertEqual(status_payload["providers"]["codex"]["tag"], "CX")
-        self.assertEqual(status_payload["providers"]["claude"]["tag"], "CC")
+        icns_path = os.path.join(RESOURCES_DIR, "AppIcon.icns")
+        self.assertTrue(os.path.isfile(icns_path), "Missing Resources/AppIcon.icns")
+        with open(icns_path, "rb") as f:
+            magic = f.read(4)
+        self.assertEqual(magic, b"icns")
 
-        # Verify cross-platform app icons and installer configs
-        linux_png = os.path.join(REPO_ROOT, "linux", "agent-monitor.png")
-        self.assertTrue(os.path.isfile(linux_png))
-        with open(linux_png, "rb") as f:
-            header = f.read(24)
-        self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
-        width, height = struct.unpack(">II", header[16:24])
-        self.assertEqual((width, height), (256, 256))
-
-        win_ico = os.path.join(REPO_ROOT, "windows", "icon.ico")
-        self.assertTrue(os.path.isfile(win_ico))
-        with open(win_ico, "rb") as f:
-            ico_hdr = f.read(6)
-        reserved, ico_type, count = struct.unpack("<HHH", ico_hdr)
-        self.assertEqual((reserved, ico_type), (0, 1))
-        self.assertGreaterEqual(count, 4)
-
-        import plistlib
-        with open(os.path.join(REPO_ROOT, "Resources", "Info.plist"), "rb") as f:
-            plist_ver = plistlib.load(f)["CFBundleShortVersionString"]
-
-        with open(os.path.join(REPO_ROOT, "windows", "installer.iss"), "r", encoding="utf-8") as f:
-            iss = f.read()
-        self.assertIn("AppVersion={}".format(plist_ver), iss)
-        self.assertIn("SetupIconFile=icon.ico", iss)
-
-        with open(os.path.join(REPO_ROOT, "linux", "install.sh"), "r", encoding="utf-8") as f:
-            sh = f.read()
-        self.assertIn("hicolor/256x256/apps", sh)
-        self.assertIn("agent-monitor.png", sh)
-        self.assertIn("Icon=agent-monitor", sh)
+        forbidden = re.compile(r"@State\b|@Observable\b|#Preview\b")
+        for swift_path in sorted(glob.glob(os.path.join(SOURCES_DIR, "*.swift"))):
+            with open(swift_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertIsNone(
+                forbidden.search(content),
+                "Forbidden Swift macro/@State/@Observable found in {}".format(swift_path),
+            )
 
 
 if __name__ == "__main__":

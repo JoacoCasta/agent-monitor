@@ -4,30 +4,31 @@ All notable changes to **Agent Monitor** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.3.1] - 2026-11-24
+## [3.0.0] - 2026-11-24
 
-### Fixed
-- **macOS Menu Bar 96% CPU redraw loop**: Removed the re-entrant `NSStatusBarButton.effectiveAppearance` KVO observer that triggered AppKit's `NSStatusItem` replicant redraw loop on every frame, replacing it with system theme/space change notifications and `StatusBarRenderKey` equality guards.
-- **Bitmap caching**: Pre-rasterized 2x Retina bitmaps for provider logos (`Sources/ProviderLogo.swift`) and status dots (`Sources/AppDelegate.swift`) instead of re-invoking CoreGraphics drawing closures on every repaint.
-- **Adaptive idle timers**: Switched `Sources/StateStore.swift` and `desktop/agent_monitor.py` (Windows/Linux) to 15s coalesced background ticks when the popup is closed (1s only while open), added `Equatable` / tray-key guards to prevent redundant UI updates, and skipped hidden SwiftUI countdown churn.
+### Added
+- **Universal macOS binary (`arm64` + `x86_64`)**: CI and Release workflows now compile and `lipo` both Apple Silicon and Intel slices for macOS 14.0+, shipping `AgentMonitor-macOS.dmg` and `AgentMonitor-macOS.zip`.
+- **Dedicated macOS unit test suite**: Replaced cross-platform desktop tests with `tests/test_macos_monitor.py` covering `Scripts/*.py`, SVG logo 1:1 parity with `Sources/ProviderLogo.swift`, `Resources/Info.plist`, `Resources/AppIcon.icns`, and Swift CommandLineTools compliance.
+
+### Changed
+- **Refocused project exclusively on native macOS**: Removed the experimental Python/PySide6 desktop tray implementation (`desktop/`, `windows/`, `linux/`) to keep the codebase lean, native SwiftUI + AppKit, and focused on macOS 14+.
+- **Full-size Retina 2x Menu Bar rendering**: Fixed `NSGraphicsContext` initialization order in `Sources/ProviderLogo.swift` (`menuBarImage`) and `Sources/AppDelegate.swift` (`statusDotImage`) so `rep.size` is set prior to creating the graphics context, rendering crisp full-size 14.5pt logos and 8.5pt status dots at `~0.0%` idle CPU.
+- **Polished macOS-only CI, Release, docs, and GitHub templates**: Updated `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `README.md`, `README.es.md`, `CONTRIBUTING.md`, and issue/PR templates exclusively for macOS.
 
 ## [2.3.0] - 2026-11-24
 
 ### Added
-- **Official monochrome agent logos**: Normalized 24x24 vector brand marks (`assets/logos/antigravity.svg`, `assets/logos/codex.svg`, `assets/logos/claude.svg`) rendered 1:1 on macOS (`Sources/ProviderLogo.swift`) and Windows/Linux (`desktop/agent_monitor.py`).
-- **Custom application icons**: Dedicated macOS bundle icon (`Resources/AppIcon.icns`), Windows installer/executable icon (`windows/icon.ico`), and Linux desktop/tray icon (`linux/agent-monitor.png`).
+- **Official monochrome agent logos**: Normalized 24x24 vector brand marks (`assets/logos/antigravity.svg`, `assets/logos/codex.svg`, `assets/logos/claude.svg`) rendered 1:1 in `Sources/ProviderLogo.swift`.
+- **Custom application icon**: Added `Resources/AppIcon.icns` (`CFBundleIconFile=AppIcon`) and bundled it into `AgentMonitor.app`.
 - **Project documentation & GitHub templates**: Added `CHANGELOG.md`, `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`, and `.github/PULL_REQUEST_TEMPLATE.md`.
-- **Polished READMEs**: Added shields.io status badges, live macOS screenshots, updated provider documentation, and a cross-platform FAQ / Troubleshooting section in both `README.md` and `README.es.md`.
 
 ### Changed
 - Improved macOS Menu Bar contrast (pure white on dark menu bars, pure black on light menu bars) and logo sizing/alignment across the menu bar and popover cards.
-- Updated cross-platform tests to validate official SVG logo assets and desktop rendering helpers.
 
 ## [2.2.0] - 2026-11-24
 
 ### Changed
-- Replaced two-letter UI provider tags (`AG`, `CX`, `CC`) with scalable monochrome vector logos in the macOS Menu Bar/popover (`Sources/ProviderLogo.swift`) and Windows/Linux popup (`desktop/agent_monitor.py`).
-- Preserved `short_tag` (`AG`, `CX`, `CC`) in `desktop/core.py` for `--status-json` backwards compatibility.
+- Replaced two-letter UI provider tags (`AG`, `CX`, `CC`) with scalable monochrome vector logos in the macOS Menu Bar and popover (`Sources/ProviderLogo.swift`).
 
 ## [2.1.1] - 2026-11-24
 
@@ -38,9 +39,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [2.1.0] - 2026-11-24
 
 ### Added
-- Zero-terminal release installers: `AgentMonitor-macOS.dmg` / `.zip`, `AgentMonitor-Windows-Setup.exe` (Inno Setup via `windows/installer.iss`) / Portable ZIP, and `AgentMonitor-Linux-x64.deb` / `.tar.gz`.
-- First-launch self-contained runtime script staging (`Sources/RuntimeSetup.swift` and `desktop/core.py`).
-- **Start at Login** toggle in Settings across macOS, Windows, and Linux.
+- Zero-terminal macOS release installers (`AgentMonitor-macOS.dmg` and `AgentMonitor-macOS.zip`).
+- First-launch self-contained runtime script staging (`Sources/RuntimeSetup.swift`).
+- **Start at login** toggle in Settings.
 
 ### Fixed
 - Fixed macOS popover layout sizing and dynamic height adaptation for enabled providers.
@@ -48,7 +49,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [2.0.0] - 2026-11-24
 
 ### Added
-- **Windows and Linux support**: Added the PySide6 (Qt6) desktop tray application (`desktop/agent_monitor.py`, `desktop/core.py`, `desktop/i18n.py`) with dynamic multi-dot tray icons, low-quota alert badges, interactive popup, and 7-language localization.
-- **`--status-json` CLI output**: Machine-readable live status, percentages, and quota windows for Waybar, Polybar, and custom scripts.
-- **Native installers & CI/CD**: Added `windows/install.ps1`, `windows/uninstall.ps1`, `linux/install.sh`, `linux/uninstall.sh`, unit tests (`tests/test_cross_platform.py`), and GitHub Actions CI & Release workflows (`.github/workflows/ci.yml`, `.github/workflows/release.yml`).
-- Built on the initial macOS release (`Sources/*.swift` + `Scripts/*.py`) supporting live traffic-light agent status, multi-window quota tracking, safe hook merging, and desktop notifications for Google Antigravity, ChatGPT (Codex), and Claude Code.
+- Automated GitHub Actions CI & Release workflows, expanded multi-provider hook/quota support, and unit test coverage building on the initial macOS SwiftUI + AppKit release (`Sources/*.swift` + `Scripts/*.py`).

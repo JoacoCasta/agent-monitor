@@ -166,10 +166,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let t = store.l10n
         let result = NSMutableAttributedString()
         let pctFont = NSFont.monospacedDigitSystemFont(ofSize: 12.0, weight: .medium)
-        let logoSize: CGFloat = 14.0
+        let logoSize: CGFloat = 14.5
         let logoYOffset = round((pctFont.capHeight - logoSize) / 2.0)
-        let dotDiameter: CGFloat = 8.0
-        let dotYOffset = floor((pctFont.capHeight - dotDiameter) / 2.0)
+        let dotDiameter: CGFloat = 8.5
+        let dotYOffset = round((pctFont.capHeight - dotDiameter) / 2.0)
         var tooltipParts: [String] = []
 
         for (index, item) in renderItems.enumerated() {
@@ -246,13 +246,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
             bitsPerPixel: 0
-        ),
-              let nsCtx = NSGraphicsContext(bitmapImageRep: rep)
-        else {
+        ) else {
             return NSImage(size: NSSize(width: dotSize, height: dotSize))
         }
 
+        // Set point size BEFORE creating NSGraphicsContext so the CTM uses 2x Retina scale
         rep.size = NSSize(width: dotSize, height: dotSize)
+        guard let nsCtx = NSGraphicsContext(bitmapImageRep: rep) else {
+            return NSImage(size: NSSize(width: dotSize, height: dotSize))
+        }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = nsCtx
         let dotRect = NSRect(origin: .zero, size: NSSize(width: dotSize, height: dotSize)).insetBy(dx: 0.5, dy: 0.5)

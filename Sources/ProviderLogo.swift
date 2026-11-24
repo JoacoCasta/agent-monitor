@@ -34,7 +34,7 @@ enum ProviderLogoRenderer {
 
     static func menuBarImage(
         for provider: AgentProvider,
-        size: CGFloat = 14.0,
+        size: CGFloat = 14.5,
         appearance: NSAppearance? = nil
     ) -> NSImage {
         let targetAppearance = appearance ?? NSAppearance.currentDrawing()
@@ -45,7 +45,7 @@ enum ProviderLogoRenderer {
 
     static func menuBarImage(
         for provider: AgentProvider,
-        size: CGFloat = 14.0,
+        size: CGFloat = 14.5,
         isDark: Bool
     ) -> NSImage {
         let cacheKey = "\(provider.rawValue)-\(Int((size * 10).rounded()))-\(isDark ? 1 : 0)"
@@ -66,13 +66,15 @@ enum ProviderLogoRenderer {
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
             bitsPerPixel: 0
-        ),
-              let nsCtx = NSGraphicsContext(bitmapImageRep: rep)
-        else {
+        ) else {
             return NSImage(size: NSSize(width: size, height: size))
         }
 
+        // Set point size BEFORE creating NSGraphicsContext so the CTM uses 2x Retina scale
         rep.size = NSSize(width: size, height: size)
+        guard let nsCtx = NSGraphicsContext(bitmapImageRep: rep) else {
+            return NSImage(size: NSSize(width: size, height: size))
+        }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = nsCtx
         let ctx = nsCtx.cgContext
