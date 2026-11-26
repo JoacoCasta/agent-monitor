@@ -15,7 +15,7 @@ SCRIPTS_DIR = os.path.join(REPO_ROOT, "Scripts")
 SOURCES_DIR = os.path.join(REPO_ROOT, "Sources")
 RESOURCES_DIR = os.path.join(REPO_ROOT, "Resources")
 LOGOS_DIR = os.path.join(REPO_ROOT, "assets", "logos")
-PROVIDERS = ("antigravity", "codex", "claude")
+PROVIDERS = ("antigravity", "codex", "claude", "copilot")
 
 
 class MacOSMonitorTests(unittest.TestCase):
@@ -26,6 +26,7 @@ class MacOSMonitorTests(unittest.TestCase):
         self.env["HOME"] = self.fake_home
         self.env["USERPROFILE"] = self.fake_home
         self.env["CODEX_HOME"] = os.path.join(self.fake_home, ".codex")
+        self.env["COPILOT_HOME"] = os.path.join(self.fake_home, ".copilot")
         self.env["AGENT_MONITOR_PYTHON"] = sys.executable
 
     def tearDown(self):
@@ -116,6 +117,35 @@ class MacOSMonitorTests(unittest.TestCase):
         self.assertEqual(r5.returncode, 0)
         self.assertEqual(json.loads(r5.stdout), {"decision": "stop"})
 
+        # Copilot camelCase hooks: ask_user -> waiting_question, permissionRequest -> waiting_permission, agentStop -> idle
+        r_cp1 = self._run_script(
+            "hook-handler.py",
+            ["copilot", "preToolUse"],
+            json.dumps(
+                {
+                    "hookEventName": "preToolUse",
+                    "sessionId": "cp-1",
+                    "cwd": "/Users/dev/proj-cp",
+                    "toolName": "ask_user",
+                    "toolArgs": json.dumps({"question": "Proceed?"}),
+                }
+            ),
+        )
+        self.assertEqual(r_cp1.returncode, 0, r_cp1.stderr)
+
+        r_cp2 = self._run_script(
+            "hook-handler.py",
+            ["copilot", "permissionRequest"],
+            json.dumps(
+                {
+                    "hookEventName": "permissionRequest",
+                    "sessionId": "cp-2",
+                    "cwd": "/Users/dev/proj-cp",
+                }
+            ),
+        )
+        self.assertEqual(r_cp2.returncode, 0, r_cp2.stderr)
+
         state_path = os.path.join(self.fake_home, ".gemini", "agent-monitor", "state.json")
         with open(state_path, "r", encoding="utf-8") as f:
             state = json.load(f)
@@ -134,6 +164,15 @@ class MacOSMonitorTests(unittest.TestCase):
         self.assertEqual(cc["status"], "waiting")
         self.assertEqual(cc["detailKey"], "waiting_permission")
 
+        cp1 = state["sessions"]["copilot:cp-1"]
+        self.assertEqual(cp1["status"], "waiting")
+        self.assertEqual(cp1["detailKey"], "waiting_question")
+        self.assertEqual(cp1["workspace"], "proj-cp")
+
+        cp2 = state["sessions"]["copilot:cp-2"]
+        self.assertEqual(cp2["status"], "waiting")
+        self.assertEqual(cp2["detailKey"], "waiting_permission")
+
     def test_claude_statusline_and_configure_hooks_roundtrip(self):
         os.makedirs(os.path.join(self.fake_home, ".gemini", "config"), exist_ok=True)
         with open(os.path.join(self.fake_home, ".gemini", "config", "hooks.json"), "w", encoding="utf-8") as f:
@@ -149,12 +188,24 @@ class MacOSMonitorTests(unittest.TestCase):
                 f,
             )
 
-        res_en = self._run_script("configure-hooks.py", ["sync", "antigravity,codex,claude"])
+        os.makedirs(os.path.join(self.fake_home, ".copilot", "hooks"), exist_ok=True)
+        with open(os.path.join(self.fake_home, ".copilot", "hooks", "custom-hook.json"), "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "hooks": {}}, f)
+
+        res_en = self._run_script("configure-hooks.py", ["sync", "antigravity,codex,claude,copilot"])
         self.assertEqual(res_en.returncode, 0, res_en.stderr)
         status_obj = json.loads(res_en.stdout)
         self.assertTrue(status_obj["antigravity"]["hooksInstalled"])
         self.assertTrue(status_obj["codex"]["hooksInstalled"])
         self.assertTrue(status_obj["claude"]["hooksInstalled"])
+        self.assertTrue(status_obj["copilot"]["hooksInstalled"])
+
+        cp_hook_path = os.path.join(self.fake_home, ".copilot", "hooks", "agent-monitor.json")
+        self.assertTrue(os.path.isfile(cp_hook_path))
+        with open(cp_hook_path, "r", encoding="utf-8") as f:
+            cp_cfg = json.load(f)
+        self.assertEqual(cp_cfg["version"], 1)
+        self.assertIn("preToolUse", cp_cfg["hooks"])
 
         sl_payload = json.dumps(
             {
@@ -192,6 +243,62 @@ class MacOSMonitorTests(unittest.TestCase):
             ag = json.load(f)
         self.assertIn("custom-user-hook", ag)
         self.assertNotIn("agent-monitor", ag)
+
+        self.assertFalse(os.path.exists(cp_hook_path))
+        self.assertTrue(os.path.exists(os.path.join(self.fake_home, ".copilot", "hooks", "custom-hook.json")))
+
+    def test_parse_copilot_quota(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("fetch_quota", os.path.join(SCRIPTS_DIR, "fetch-quota.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        # Pro plan: finite premium_interactions + unlimited chat/completions -> returns only premium_interactions
+        now_ts = 1795700000
+        buckets = mod.parse_copilot_quota(
+            {
+                "quotaSnapshots": {
+                    "chat": {"isUnlimitedEntitlement": True, "remainingPercentage": 100, "resetDate": "2026-11-26T14:00:00Z"},
+                    "completions": {"isUnlimitedEntitlement": True, "remainingPercentage": 100},
+                    "premium_interactions": {
+                        "isUnlimitedEntitlement": False,
+                        "entitlementRequests": 200,
+                        "usedRequests": 50,
+                        "remainingPercentage": 75,
+                        "resetDate": "2026-12-01T00:00:00Z",
+                    },
+                }
+            },
+            now_epoch=now_ts,
+        )
+        self.assertEqual(len(buckets), 1)
+        b = buckets[0]
+        self.assertEqual(b["groupKey"], "copilot")
+        self.assertEqual(b["windowKind"], "premium")
+        self.assertAlmostEqual(b["remainingFraction"], 0.75, places=4)
+        self.assertEqual(b["usedRequests"], 50)
+        self.assertEqual(b["entitlementRequests"], 200)
+        self.assertFalse(b["isWeekly"])
+        self.assertTrue(b["resetInSeconds"] > 0)
+
+        # Equal/non-future resetDate must clear resetTime/resetInSeconds
+        b_same = mod.parse_copilot_quota(
+            {
+                "quotaSnapshots": {
+                    "premium_interactions": {
+                        "isUnlimitedEntitlement": False,
+                        "entitlementRequests": 200,
+                        "usedRequests": 0,
+                        "remainingPercentage": 100,
+                        "resetDate": "2026-11-26T13:33:20Z",
+                    }
+                }
+            },
+            now_epoch=1795700000,
+        )
+        self.assertEqual(b_same[0]["resetTime"], "")
+        self.assertEqual(b_same[0]["resetInSeconds"], 0)
 
     def test_official_svg_logos_match_swift_paths_1_to_1(self):
         with open(os.path.join(SOURCES_DIR, "ProviderLogo.swift"), "r", encoding="utf-8") as f:

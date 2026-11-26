@@ -8,7 +8,7 @@
 
 [Español](README.es.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
-A lightweight, native **macOS Menu Bar** app (Universal binary for **Apple Silicon & Intel**, macOS 14+) to track live agent status and remaining quotas across **Google Antigravity**, **ChatGPT (Codex)**, and **Claude Code**.
+A lightweight, native **macOS Menu Bar** app (Universal binary for **Apple Silicon & Intel**, macOS 14+) to track live agent status and remaining quotas across **Google Antigravity**, **ChatGPT (Codex)**, **Claude Code**, and **GitHub Copilot**.
 
 ## Screenshots
 
@@ -47,6 +47,7 @@ Download the latest Universal macOS build (`arm64` + `x86_64`) from [GitHub Rele
 | **Google Antigravity** | Antigravity mark | `agy` CLI `statusLine` (`gemini` & `3p` 5h/weekly) | `~/.gemini/config/hooks.json` |
 | **ChatGPT (Codex)** | OpenAI mark | `codex app-server` JSON-RPC (`account/rateLimits/read`) | `~/.codex/hooks.json` |
 | **Claude Code** | Claude mark | `~/.claude/settings.json` `statusLine` (`rate_limits`) | `~/.claude/settings.json` hooks |
+| **GitHub Copilot** | Copilot Octicon mark | `copilot --headless --stdio` JSON-RPC (`account.getQuota`) | `~/.copilot/hooks/agent-monitor.json` |
 
 ## Build / Install from Source (Optional)
 
@@ -75,7 +76,7 @@ cd agent-monitor
 
 ## Privacy & Official Interfaces Only
 
-Agent Monitor reads no private credentials or undocumented internal databases. It relies strictly on documented CLI/hook interfaces (`agy --settings`, `codex app-server`, and official `hooks` / `statusLine` contracts) and stores state locally under `~/.gemini/agent-monitor/`.
+Agent Monitor reads no private credentials or undocumented internal databases. It relies strictly on documented CLI/hook interfaces (`agy --settings`, `codex app-server`, `copilot --headless --stdio`, and official `hooks` / `statusLine` contracts) and stores state locally under `~/.gemini/agent-monitor/`.
 
 ## License
 

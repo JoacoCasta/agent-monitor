@@ -208,6 +208,16 @@ struct L10n {
                 zh: "通过 statusLine 获取 5小时/每周限额 + Hooks 状态",
                 ja: "statusLine 経由の5時間/週間制限 + Hooks ステータス"
             )
+        case .copilot:
+            return tr(
+                en: "Premium requests quota + live status via hooks",
+                es: "Cuota de solicitudes premium + semáforo vía hooks",
+                pt: "Cota de solicitações premium + semáforo via hooks",
+                fr: "Quota de requêtes premium + statut via hooks",
+                de: "Premium-Anfragenlimit + Live-Status über Hooks",
+                zh: "高级请求配额 + Hooks 实时状态",
+                ja: "プレミアムリクエスト枠 + Hooks ステータス"
+            )
         }
     }
 
@@ -661,6 +671,8 @@ struct L10n {
             return "Codex"
         case "claude":
             return "Claude Code"
+        case "copilot":
+            return "Copilot CLI"
         default:
             if fallback.contains("3P") {
                 return thirdPartyGroupTitle
@@ -710,6 +722,36 @@ struct L10n {
                 de: "Ausgabenlimit",
                 zh: "消费限额",
                 ja: "利用上限"
+            )
+        case "premium":
+            return tr(
+                en: "Premium requests",
+                es: "Solicitudes premium",
+                pt: "Solicitações premium",
+                fr: "Requêtes premium",
+                de: "Premium-Anfragen",
+                zh: "高级请求",
+                ja: "プレミアムリクエスト"
+            )
+        case "chat":
+            return tr(
+                en: "Chat messages",
+                es: "Mensajes de chat",
+                pt: "Mensagens de chat",
+                fr: "Messages de chat",
+                de: "Chat-Nachrichten",
+                zh: "聊天消息",
+                ja: "チャット"
+            )
+        case "completions":
+            return tr(
+                en: "Code completions",
+                es: "Autocompletado",
+                pt: "Autocompletar",
+                fr: "Complétions de code",
+                de: "Code-Vervollständigungen",
+                zh: "代码补全",
+                ja: "コード補完"
             )
         case "days":
             let d = bucket.windowAmount ?? 1

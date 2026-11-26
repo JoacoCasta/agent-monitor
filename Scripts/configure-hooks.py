@@ -25,7 +25,7 @@ STATUSLINE_MARKERS = (
     "claude-statusline.py",
 )
 
-PROVIDERS = ("antigravity", "codex", "claude")
+PROVIDERS = ("antigravity", "codex", "claude", "copilot")
 
 
 def get_codex_hooks_path():
@@ -33,6 +33,58 @@ def get_codex_hooks_path():
     if codex_home and codex_home.strip():
         return os.path.join(os.path.expanduser(codex_home.strip()), "hooks.json")
     return os.path.expanduser("~/.codex/hooks.json")
+
+
+COPILOT_HOOK_EVENTS = (
+    "sessionStart",
+    "userPromptSubmitted",
+    "preToolUse",
+    "postToolUse",
+    "postToolUseFailure",
+    "permissionRequest",
+    "notification",
+    "agentStop",
+    "subagentStop",
+    "sessionEnd",
+)
+
+
+def get_copilot_hooks_path():
+    copilot_home = os.environ.get("COPILOT_HOME")
+    if copilot_home and copilot_home.strip():
+        return os.path.join(os.path.expanduser(copilot_home.strip()), "hooks", "agent-monitor.json")
+    return os.path.expanduser("~/.copilot/hooks/agent-monitor.json")
+
+
+def is_copilot_installed():
+    return os.path.isfile(get_copilot_hooks_path())
+
+
+def enable_copilot():
+    py = resolve_python_for_hooks()
+    hooks_obj = {}
+    for ev in COPILOT_HOOK_EVENTS:
+        cmd = "{} {} copilot {}".format(quote_path(py), quote_path(HOOK_HANDLER_PATH), ev)
+        hooks_obj[ev] = [
+            {
+                "type": "command",
+                "bash": cmd,
+                "timeoutSec": 5,
+            }
+        ]
+    write_json_atomic(get_copilot_hooks_path(), {"version": 1, "hooks": hooks_obj})
+
+
+def disable_copilot():
+    path = get_copilot_hooks_path()
+    try:
+        if os.path.isfile(path):
+            os.unlink(path)
+        parent = os.path.dirname(path)
+        if os.path.isdir(parent) and not os.listdir(parent):
+            os.rmdir(parent)
+    except Exception:
+        pass
 
 
 def quote_path(path):
@@ -380,8 +432,9 @@ def detect_app_installed(provider):
             "antigravity": "/Applications/Antigravity.app",
             "codex": "/Applications/ChatGPT.app",
             "claude": "/Applications/Claude.app",
+            "copilot": "/Applications/GitHub Copilot.app",
         }
-        return os.path.exists(app_map[provider])
+        return os.path.exists(app_map.get(provider, ""))
 
     if os.name == "nt":
         local_app = os.environ.get("LOCALAPPDATA", "")
@@ -490,6 +543,21 @@ def get_status():
         or os.path.isdir(os.path.expanduser("~/.claude"))
     )
 
+    import glob
+
+    home = os.path.expanduser("~")
+    copilot_bin = (
+        bool(os.environ.get("COPILOT_BINARY", "").strip() and os.path.isfile(os.environ["COPILOT_BINARY"].strip()))
+        or bool(shutil.which("copilot"))
+        or any(os.path.isfile(p) and os.access(p, os.X_OK) for p in [
+            os.path.join(home, ".local", "bin", "copilot"),
+            "/opt/homebrew/bin/copilot",
+            "/usr/local/bin/copilot",
+        ])
+        or bool(glob.glob(os.path.join(home, "Library", "Application Support", "orca", "agent-runtimes", "copilot", "*", "copilot")))
+        or bool(glob.glob(os.path.join(home, "Library", "Caches", "github-copilot-sdk", "cli", "*", "copilot")))
+    )
+
     return {
         "antigravity": {
             "hooksInstalled": is_antigravity_installed(),
@@ -506,6 +574,11 @@ def get_status():
             "binaryFound": claude_bin,
             "appInstalled": detect_app_installed("claude"),
         },
+        "copilot": {
+            "hooksInstalled": is_copilot_installed(),
+            "binaryFound": copilot_bin,
+            "appInstalled": detect_app_installed("copilot"),
+        },
     }
 
 
@@ -516,6 +589,8 @@ def enable_provider(provider):
         enable_codex()
     elif provider == "claude":
         enable_claude()
+    elif provider == "copilot":
+        enable_copilot()
 
 
 def disable_provider(provider):
@@ -525,6 +600,8 @@ def disable_provider(provider):
         disable_codex()
     elif provider == "claude":
         disable_claude()
+    elif provider == "copilot":
+        disable_copilot()
 
 
 def main():

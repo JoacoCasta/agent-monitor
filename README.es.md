@@ -8,7 +8,7 @@
 
 [English](README.md) · [Changelog](CHANGELOG.md) · [Contribuir](CONTRIBUTING.md)
 
-App nativa y liviana para la **barra de menú de macOS** (binario Universal para **Apple Silicon e Intel**, macOS 14+) que muestra en tiempo real el estado y las cuotas restantes de **Google Antigravity**, **ChatGPT (Codex)** y **Claude Code**.
+App nativa y liviana para la **barra de menú de macOS** (binario Universal para **Apple Silicon e Intel**, macOS 14+) que muestra en tiempo real el estado y las cuotas restantes de **Google Antigravity**, **ChatGPT (Codex)**, **Claude Code** y **GitHub Copilot**.
 
 ## Capturas de pantalla
 
@@ -47,6 +47,7 @@ Descarga la última compilación Universal para macOS (`arm64` + `x86_64`) desde
 | **Google Antigravity** | Logo de Antigravity | `agy` CLI `statusLine` (`gemini` y `3p` 5h/semanal) | `~/.gemini/config/hooks.json` |
 | **ChatGPT (Codex)** | Logo de OpenAI | `codex app-server` JSON-RPC (`account/rateLimits/read`) | `~/.codex/hooks.json` |
 | **Claude Code** | Logo de Claude | `statusLine` en `~/.claude/settings.json` (`rate_limits`) | Hooks en `~/.claude/settings.json` |
+| **GitHub Copilot** | Logo de Copilot | `copilot --headless --stdio` JSON-RPC (`account.getQuota`) | `~/.copilot/hooks/agent-monitor.json` |
 
 ## Compilar / Instalar desde el código fuente (Opcional)
 
@@ -75,7 +76,7 @@ cd agent-monitor
 
 ## Privacidad
 
-Agent Monitor no accede a credenciales privadas ni bases internas no documentadas: utiliza únicamente interfaces oficiales (`agy --settings`, `codex app-server` y los contratos oficiales de `hooks` / `statusLine`) guardando el estado localmente en `~/.gemini/agent-monitor/`.
+Agent Monitor no accede a credenciales privadas ni bases internas no documentadas: utiliza únicamente interfaces oficiales (`agy --settings`, `codex app-server`, `copilot --headless --stdio` y los contratos oficiales de `hooks` / `statusLine`) guardando el estado localmente en `~/.gemini/agent-monitor/`.
 
 ## Licencia
 

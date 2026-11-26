@@ -833,7 +833,14 @@ private struct QuotaRowView: View {
 
                 Spacer()
 
-                HStack(spacing: 3.5) {
+                HStack(spacing: 4) {
+                    if let used = bucket.usedRequests,
+                       let total = bucket.entitlementRequests,
+                       total > 0 {
+                        Text("\(used)/\(total)")
+                            .font(.system(size: 10.5).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                     if bucket.isLow {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 9.5))
@@ -862,16 +869,18 @@ private struct QuotaRowView: View {
             }
             .frame(height: 5.5)
 
-            HStack(spacing: 4) {
-                Text(t.resetsInText(countdown))
-                    .font(.system(size: 10).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                if !resetClock.isEmpty && countdown != t.resetDoneLabel {
-                    Text("· \(resetClock)")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+            if bucket.resetDate != nil || bucket.resetInSeconds > 0 {
+                HStack(spacing: 4) {
+                    Text(t.resetsInText(countdown))
+                        .font(.system(size: 10).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    if !resetClock.isEmpty && countdown != t.resetDoneLabel {
+                        Text("· \(resetClock)")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
                 }
-                Spacer()
             }
         }
     }

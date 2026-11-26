@@ -4,6 +4,15 @@ All notable changes to **Agent Monitor** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-11-26
+
+### Added
+- **GitHub Copilot support**:
+  - Official monochrome GitHub Copilot vector logo (`assets/logos/copilot.svg`, rendered at 2x Retina in the Menu Bar and SwiftUI views).
+  - Live quota polling via official Copilot CLI JSON-RPC (`copilot --headless --stdio --no-auto-update`, `account.getQuota`), showing `Premium requests` (with exact `used/entitlement` count) and Free-tier `Chat` / `Code completions` limits when applicable.
+  - Real-time session tracking & traffic-light status via isolated user-level Copilot hooks (`~/.copilot/hooks/agent-monitor.json`, respecting `$COPILOT_HOME`).
+  - Full 7-language localization across onboarding, dashboard, settings, notifications, and quota labels.
+
 ## [3.1.0] - 2026-11-24
 
 ### Added

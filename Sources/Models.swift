@@ -6,6 +6,7 @@ enum AgentProvider: String, Codable, CaseIterable, Identifiable {
     case antigravity
     case codex
     case claude
+    case copilot
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         case .antigravity: return "AG"
         case .codex: return "CX"
         case .claude: return "CC"
+        case .copilot: return "CP"
         }
     }
 
@@ -22,6 +24,7 @@ enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         case .antigravity: return "Antigravity"
         case .codex: return "ChatGPT (Codex)"
         case .claude: return "Claude Code"
+        case .copilot: return "GitHub Copilot"
         }
     }
 
@@ -30,6 +33,7 @@ enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         case .antigravity: return "com.google.antigravity"
         case .codex: return "com.openai.codex"
         case .claude: return "com.anthropic.claudefordesktop"
+        case .copilot: return "com.github.githubapp"
         }
     }
 
@@ -38,12 +42,13 @@ enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         case .antigravity: return "/Applications/Antigravity.app"
         case .codex: return "/Applications/ChatGPT.app"
         case .claude: return "/Applications/Claude.app"
+        case .copilot: return "/Applications/GitHub Copilot.app"
         }
     }
 
     var supportsBackgroundPoll: Bool {
         switch self {
-        case .antigravity, .codex: return true
+        case .antigravity, .codex, .copilot: return true
         case .claude: return false
         }
     }
@@ -137,6 +142,8 @@ struct QuotaBucket: Codable, Identifiable, Equatable {
     var resetTime: String
     var resetInSeconds: Int
     var disabled: Bool?
+    var usedRequests: Int?
+    var entitlementRequests: Int?
 
     var remainingPercent: Int {
         let pct = Int((remainingFraction * 100.0).rounded())

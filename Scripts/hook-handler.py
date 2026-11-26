@@ -14,7 +14,7 @@ MONITOR_DIR = os.path.expanduser("~/.gemini/agent-monitor")
 STATE_PATH = os.path.join(MONITOR_DIR, "state.json")
 LOCK_PATH = os.path.join(MONITOR_DIR, "state.lock")
 IDLE_PRUNE_SECONDS = 3600.0
-VALID_PROVIDERS = ("antigravity", "codex", "claude")
+VALID_PROVIDERS = ("antigravity", "codex", "claude", "copilot")
 
 
 def acquire_lock(lock_file):
@@ -144,7 +144,7 @@ def extract_tool_info(provider, payload):
         args = parse_tool_args(tc.get("args"))
         return name, args
     name = str(payload.get("tool_name") or payload.get("toolName") or "")
-    args = parse_tool_args(payload.get("tool_input") or payload.get("toolInput"))
+    args = parse_tool_args(payload.get("tool_input") or payload.get("toolInput") or payload.get("toolArgs"))
     if not name and isinstance(payload.get("toolCall"), dict):
         tc = payload["toolCall"]
         name = str(tc.get("name") or "")
@@ -253,7 +253,7 @@ def update_state(provider, payload, event):
                     return
             elif event == "PreToolUse":
                 name, args = extract_tool_info(provider, payload)
-                if name in ("ask_question", "AskUserQuestion", "request_user_input"):
+                if name in ("ask_question", "AskUserQuestion", "request_user_input", "ask_user"):
                     status = "waiting"
                     waiting_reason = "question"
                     detail = "Waiting for answer"
@@ -302,6 +302,7 @@ def update_state(provider, payload, event):
                         "ask_question",
                         "AskUserQuestion",
                         "request_user_input",
+                        "ask_user",
                         "ask_permission",
                         "notify_user",
                     )
@@ -431,6 +432,23 @@ def main():
                     or payload.get("hook_event_name")
                     or fallback_event
                 )
+                if provider == "copilot":
+                    copilot_event_map = {
+                        "sessionStart": "SessionStart",
+                        "userPromptSubmitted": "UserPromptSubmit",
+                        "preToolUse": "PreToolUse",
+                        "postToolUse": "PostToolUse",
+                        "postToolUseFailure": "PostToolUseFailure",
+                        "permissionRequest": "Notification",
+                        "notification": "Notification",
+                        "agentStop": "Stop",
+                        "subagentStop": "Stop",
+                        "sessionEnd": "SessionEnd",
+                    }
+                    raw_ev = event
+                    event = copilot_event_map.get(event, event)
+                    if raw_ev == "permissionRequest" and "notification_type" not in payload:
+                        payload["notification_type"] = "permission_prompt"
                 update_state(provider, payload, event)
     except Exception:
         pass

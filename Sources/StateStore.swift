@@ -18,10 +18,10 @@ final class StateStore: ObservableObject {
 
     var preferredPopoverHeight: CGFloat {
         if !hasCompletedOnboarding {
-            return 480
+            return 540
         }
         if showingSettings {
-            return enabledProviders.contains(.antigravity) ? 556 : 522
+            return enabledProviders.contains(.antigravity) ? 604 : 570
         }
         var bodyHeight: CGFloat = 20
         for provider in enabledProviders {

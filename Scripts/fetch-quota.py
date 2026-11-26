@@ -531,14 +531,254 @@ def fetch_codex():
     }
 
 
+def resolve_copilot_binary():
+    override = os.environ.get("COPILOT_BINARY", "").strip()
+    if override and os.path.isfile(override) and os.access(override, os.X_OK):
+        return override
+
+    found = shutil.which("copilot")
+    if found and os.path.isfile(found) and os.access(found, os.X_OK):
+        return found
+
+    home = os.path.expanduser("~")
+    static_candidates = [
+        os.path.join(home, ".local", "bin", "copilot"),
+        "/opt/homebrew/bin/copilot",
+        "/usr/local/bin/copilot",
+    ]
+    for cand in static_candidates:
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+
+    import glob
+
+    glob_patterns = [
+        os.path.join(home, "Library", "Application Support", "orca", "agent-runtimes", "copilot", "*", "copilot"),
+        os.path.join(home, "Library", "Caches", "github-copilot-sdk", "cli", "*", "copilot"),
+    ]
+    matches = []
+    for pattern in glob_patterns:
+        for cand in glob.glob(pattern):
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                try:
+                    mtime = os.path.getmtime(cand)
+                except OSError:
+                    mtime = 0
+                matches.append((mtime, cand))
+    if matches:
+        matches.sort(reverse=True)
+        return matches[0][1]
+    return None
+
+
+def _write_lsp_frame(stream, payload):
+    body = json.dumps(payload).encode("utf-8")
+    header = "Content-Length: {}\r\n\r\n".format(len(body)).encode("ascii")
+    stream.write(header + body)
+    stream.flush()
+
+
+def _read_lsp_frames(fd, deadline):
+    import select
+    import time
+
+    buf = b""
+    messages = []
+    while time.monotonic() < deadline:
+        remaining = max(0.05, deadline - time.monotonic())
+        ready, _, _ = select.select([fd], [], [], min(0.25, remaining))
+        if not ready:
+            continue
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            break
+        buf += chunk
+        while True:
+            sep_idx = buf.find(b"\r\n\r\n")
+            sep_len = 4
+            if sep_idx == -1:
+                sep_idx = buf.find(b"\n\n")
+                sep_len = 2
+            if sep_idx == -1:
+                break
+            header_bytes = buf[:sep_idx].decode("ascii", errors="ignore")
+            content_length = None
+            for line in header_bytes.splitlines():
+                if line.lower().startswith("content-length:"):
+                    try:
+                        content_length = int(line.split(":", 1)[1].strip())
+                    except ValueError:
+                        content_length = None
+            if content_length is None:
+                buf = buf[sep_idx + sep_len:]
+                continue
+            total_needed = sep_idx + sep_len + content_length
+            if len(buf) < total_needed:
+                break
+            body = buf[sep_idx + sep_len:total_needed]
+            buf = buf[total_needed:]
+            try:
+                messages.append(json.loads(body.decode("utf-8")))
+            except Exception:
+                pass
+        if messages:
+            return messages
+    return messages
+
+
+def _parse_iso_to_epoch(iso_str):
+    if not iso_str or not isinstance(iso_str, str):
+        return None
+    from datetime import datetime, timezone
+
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
+def parse_copilot_quota(raw_result, now_epoch=None):
+    import time
+    from datetime import datetime, timezone
+
+    if now_epoch is None:
+        now_epoch = time.time()
+
+    snapshots = raw_result.get("quotaSnapshots") if isinstance(raw_result, dict) else None
+    if not isinstance(snapshots, dict):
+        return []
+
+    spec = [
+        ("premium_interactions", "premium", "Premium requests"),
+        ("chat", "chat", "Chat"),
+        ("completions", "completions", "Completions"),
+    ]
+
+    finite_buckets = []
+    fallback_buckets = []
+    for key, window_kind, label in spec:
+        snap = snapshots.get(key)
+        if not isinstance(snap, dict):
+            continue
+        pct = snap.get("remainingPercentage")
+        if pct is None:
+            pct = 100.0
+        try:
+            rem_frac = max(0.0, min(1.0, float(pct) / 100.0))
+        except (TypeError, ValueError):
+            rem_frac = 1.0
+
+        entitlement = snap.get("entitlementRequests")
+        used = snap.get("usedRequests")
+        is_unlimited = bool(snap.get("isUnlimitedEntitlement", False))
+
+        reset_iso = ""
+        reset_in_seconds = 0
+        raw_reset = snap.get("resetDate")
+        reset_ts = _parse_iso_to_epoch(raw_reset)
+        if reset_ts is not None and reset_ts > now_epoch + 60:
+            reset_iso = datetime.fromtimestamp(reset_ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            reset_in_seconds = int(round(reset_ts - now_epoch))
+
+        bucket = {
+            "id": "copilot-{}".format(key),
+            "group": "Copilot",
+            "groupKey": "copilot",
+            "label": label,
+            "windowKind": window_kind,
+            "isWeekly": False,
+            "remainingFraction": round(rem_frac, 4),
+            "resetTime": reset_iso,
+            "resetInSeconds": reset_in_seconds,
+            "disabled": False,
+        }
+        if not is_unlimited:
+            try:
+                if entitlement is not None:
+                    bucket["entitlementRequests"] = int(entitlement)
+                if used is not None:
+                    bucket["usedRequests"] = int(used)
+            except (TypeError, ValueError):
+                pass
+            finite_buckets.append(bucket)
+        else:
+            fallback_buckets.append(bucket)
+
+    return finite_buckets if finite_buckets else fallback_buckets[:1]
+
+
+def fetch_copilot():
+    import time
+
+    binary = resolve_copilot_binary()
+    if not binary:
+        raise RuntimeError("copilot CLI not found")
+
+    proc = subprocess.Popen(
+        [binary, "--headless", "--stdio", "--no-auto-update"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    responses = {}
+    try:
+        deadline = time.monotonic() + 10.0
+        _write_lsp_frame(proc.stdin, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        _write_lsp_frame(proc.stdin, {"jsonrpc": "2.0", "id": 2, "method": "auth.getStatus", "params": {}})
+        _write_lsp_frame(proc.stdin, {"jsonrpc": "2.0", "id": 3, "method": "account.getQuota", "params": {}})
+
+        fd = proc.stdout.fileno()
+        while time.monotonic() < deadline and (2 not in responses or 3 not in responses):
+            frames = _read_lsp_frames(fd, deadline)
+            if not frames:
+                break
+            for msg in frames:
+                if isinstance(msg, dict) and "id" in msg:
+                    responses[msg["id"]] = msg
+    finally:
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+    auth_resp = responses.get(2, {})
+    auth_res = auth_resp.get("result") or {}
+    if auth_resp and not auth_res.get("isAuthenticated", True):
+        raise RuntimeError("Not authenticated with GitHub Copilot")
+
+    quota_resp = responses.get(3, {})
+    if not quota_resp:
+        raise RuntimeError("Timed out waiting for Copilot account.getQuota")
+    if "error" in quota_resp and quota_resp["error"]:
+        err_msg = quota_resp["error"].get("message") if isinstance(quota_resp["error"], dict) else str(quota_resp["error"])
+        raise RuntimeError(err_msg or "Copilot quota RPC error")
+
+    buckets = parse_copilot_quota(quota_resp.get("result") or {})
+    return {
+        "provider": "copilot",
+        "fetchedAt": utc_now_iso(),
+        "planType": "",
+        "buckets": buckets,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", required=True, choices=["antigravity", "codex"])
+    parser.add_argument("--provider", required=True, choices=["antigravity", "codex", "copilot"])
     args = parser.parse_args()
 
     try:
         if args.provider == "antigravity":
             data = fetch_antigravity()
+        elif args.provider == "copilot":
+            data = fetch_copilot()
         else:
             data = fetch_codex()
         sys.stdout.write(json.dumps(data) + "\n")
